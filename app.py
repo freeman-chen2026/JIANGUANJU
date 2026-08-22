@@ -23,44 +23,28 @@ def format_duration(total_minutes: int) -> str:
     return f"{total_minutes // 60}:{total_minutes % 60:02d}"
 
 def detect_header_row(df_raw, keywords):
-    """
-    在原始数据（无表头）中查找包含最多关键词的行，作为表头行索引。
-    返回 (header_row_index, 是否找到)
-    """
     best_score = -1
     best_row = 0
-    for i in range(min(10, len(df_raw))):  # 只查前10行
+    for i in range(min(10, len(df_raw))):
         row_values = [str(v).strip() for v in df_raw.iloc[i].values]
         score = sum(1 for kw in keywords if any(kw in val for val in row_values))
         if score > best_score:
             best_score = score
             best_row = i
-    # 如果得分大于0，认为找到了
     if best_score > 0:
         return best_row, True
     else:
         return 0, False
 
 def read_excel_with_auto_header(file, keywords):
-    """
-    读取 Excel，自动检测表头行
-    返回 DataFrame（已正确设置列名）
-    """
-    # 先以无表头方式读取所有数据（字符串）
     raw = pd.read_excel(file, header=None, dtype=str)
-    # 自动检测表头行
     header_idx, found = detect_header_row(raw, keywords)
     if not found:
-        # 未找到，使用第一行作为表头（可能失败）
         st.warning("未检测到表头，将使用第一行作为列名，可能导致错误。")
         return pd.read_excel(file, header=0)
-    # 重新读取，使用检测到的表头行
     df = pd.read_excel(file, header=header_idx)
-    # 删除全空列（列名包含 Unnamed 的也删除）
     df = df.dropna(axis=1, how='all')
-    # 删除列名包含 'Unnamed' 的列
     df = df.loc[:, ~df.columns.str.contains('Unnamed', case=False)]
-    # 重置索引
     df = df.reset_index(drop=True)
     return df
 
@@ -123,13 +107,13 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
 # ---------- Streamlit 界面 ----------
 st.set_page_config(page_title="Excel 模板自动更新（航段版）", layout="wide")
 st.title("🛩️ 航段数据 → 模板更新工具（自动表头检测）")
-st.markdown("上传 **Excel 1（模板）** 和 **Excel 2（航段数据）**，程序自动检测表头并计算昨日日期。")
+st.markdown("上传 **昨日飞行数据（operation-每日飞行数据）** 和 **航段数据导出**，程序自动检测表头并计算昨日日期。")
 
 col1, col2 = st.columns(2)
 with col1:
-    excel1_file = st.file_uploader("📂 上传 Excel 1（模板）", type=["xlsx", "xlsm"])
+    excel1_file = st.file_uploader("📂 上传昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"])
 with col2:
-    excel2_file = st.file_uploader("📂 上传 Excel 2（航段数据）", type=["xlsx", "xlsm"])
+    excel2_file = st.file_uploader("📂 上传航段数据导出", type=["xlsx", "xlsm"])
 
 if excel1_file and excel2_file:
     # 读取 Excel 2，自动检测表头
@@ -174,6 +158,12 @@ if excel1_file and excel2_file:
     if st.button("🚀 开始处理", type="primary"):
         with st.spinner("正在处理..."):
             try:
+                # 计算昨日日期用于文件名
+                today = datetime.now().date()
+                yesterday = today - timedelta(days=1)
+                month = yesterday.month
+                day = yesterday.day
+
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp1:
                     tmp1.write(excel1_file.getvalue())
                     excel1_path = tmp1.name
@@ -201,12 +191,16 @@ if excel1_file and excel2_file:
                     st.dataframe(df_time)
 
                 with open(output_path, 'rb') as f:
-                    st.download_button(
-                        label="📥 下载 Excel 1（已更新）",
-                        data=f.read(),
-                        file_name="updated_excel1.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    file_data = f.read()
+
+                # 生成动态文件名
+                file_name = f"中南-深圳局-天成商务航空有限公司-{month}月{day}日飞行数据.xlsx"
+                st.download_button(
+                    label="📥 下载 Excel 1（已更新）",
+                    data=file_data,
+                    file_name=file_name,
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
                 os.unlink(excel1_path)
                 os.unlink(output_path)
@@ -221,18 +215,10 @@ if excel1_file and excel2_file:
 st.markdown("---")
 with st.expander("📖 使用说明"):
     st.markdown("""
-    **工作原理**
-    - 程序自动扫描 Excel 2 的前10行，寻找包含“客户”、“航班号”、“实际飞行时间”等关键词的行作为表头。
-    - 您只需在下方下拉框中为四列（飞行时间、出发城市、到达城市、注册号）选择正确的列名。
-    - 日期自动使用今天的日期计算昨日，无需您输入。
-
-    **如果自动检测表头错误**
-    - 请检查 Excel 2 的表头是否在第二行或第一行？程序会寻找关键词，若仍不对，可反馈调整。
-    - 您也可以手动重命名 Excel 2 的列名，使第一行包含关键词。
-
-    **示例**
-    - 飞行时间列 → 选择“实际飞行时间”
-    - 出发城市 → “出发城市”
-    - 到达城市 → “到达城市”
-    - 注册号 → “飞机注册号”
+    **操作步骤**
+    1. 上传 **昨日飞行数据（operation-每日飞行数据）**（即模板文件）和 **航段数据导出**。
+    2. 程序自动检测航段数据的表头（寻找“客户”、“航班号”等关键词），清理无效列。
+    3. 在下拉列表中选择对应的列：飞行时间、出发城市、到达城市、飞机注册号。
+    4. 点击“开始处理”，查看统计信息并下载更新后的文件。
+    5. 下载的文件名自动包含昨日的月份和日期，例如“中南-深圳局-天成商务航空有限公司-8月21日飞行数据.xlsx”。
     """)
