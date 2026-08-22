@@ -7,12 +7,11 @@ import os
 
 # ---------- 辅助函数 ----------
 def parse_duration(dur_str) -> int:
-    """将 'HH:MM' 格式的时间字符串转换为总分钟数（支持多种分隔符）"""
+    """将 'HH:MM' 或 'HH：MM' 格式的时间字符串转换为总分钟数"""
     if pd.isna(dur_str):
         return 0
     s = str(dur_str).strip()
-    # 支持 "34:53" 或 "34：53"（中文冒号）
-    s = s.replace('：', ':')
+    s = s.replace('：', ':')  # 中文冒号转英文
     parts = s.split(':')
     if len(parts) == 2:
         try:
@@ -22,7 +21,6 @@ def parse_duration(dur_str) -> int:
     return 0
 
 def format_duration(total_minutes: int) -> str:
-    """将总分钟数格式化为 'HH:MM'"""
     hours = total_minutes // 60
     minutes = total_minutes % 60
     return f"{hours}:{minutes:02d}"
@@ -38,7 +36,7 @@ def suggest_column(df, candidates):
 
 def update_excel1(excel1_path, excel2_df, flight_col, dep_city_col, arr_city_col, reg_col, today_date):
     """
-    根据 excel2 的数据更新 excel1 模板
+    根据 excel2 的数据更新 excel1 模板，返回 (输出文件路径, 统计信息字典)
     """
     wb = load_workbook(excel1_path)
     ws = wb.active
@@ -48,16 +46,16 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_city_col, arr_city_col
     yesterday_str = f"{yesterday.month}月{yesterday.day}日"
     ws.cell(row=2, column=10).value = f"*昨日总飞行时间\n（昨日指{yesterday_str}）*"
 
-    # 2. 计算昨日飞行时间总和（J3）
+    # 2. 计算昨日飞行时间总和（J3），仅对非空时间行求和
+    valid_times = excel2_df[flight_col].dropna()
     total_minutes = 0
-    for val in excel2_df[flight_col]:
+    for val in valid_times:
         total_minutes += parse_duration(val)
     new_j3 = format_duration(total_minutes)
     ws.cell(row=3, column=10).value = new_j3
 
-    # 3. 架次（K3）：有效航段数（去除空行）
-    valid_flights = excel2_df[flight_col].dropna()
-    num_flights = len(valid_flights)
+    # 3. 架次（K3）：有效航段数（有时间值的行数）
+    num_flights = len(valid_times)
     ws.cell(row=3, column=11).value = num_flights
 
     # 4. 累计飞行时间（L3）：旧累计 + 昨日新增
@@ -66,9 +64,12 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_city_col, arr_city_col
     new_total_minutes = old_minutes + total_minutes
     ws.cell(row=3, column=12).value = format_duration(new_total_minutes)
 
-    # 5. 航段信息（N3）：出发城市-到达城市，顿号分隔
+    # 5. 航段信息（N3）：出发城市-到达城市，顿号分隔，只取有时间值的行（保持与架次一致）
     segments = []
-    for _, row in excel2_df.iterrows():
+    for idx, row in excel2_df.iterrows():
+        # 检查该行是否有有效飞行时间（非空）
+        if pd.isna(row[flight_col]):
+            continue
         dep = str(row[dep_city_col]).strip() if pd.notna(row[dep_city_col]) else ''
         arr = str(row[arr_city_col]).strip() if pd.notna(row[arr_city_col]) else ''
         if dep and arr:
@@ -79,14 +80,27 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_city_col, arr_city_col
             segments.append(arr)
     ws.cell(row=3, column=14).value = '、'.join(segments)
 
-    # 6. 飞机注册号数量（O3）：去重后的注册号个数
-    unique_regs = excel2_df[reg_col].dropna().unique()
+    # 6. 飞机注册号数量（O3）：去重后的注册号个数（只统计有时间值的航段）
+    # 提取注册号，去除空值，去重
+    reg_series = excel2_df.loc[valid_times.index, reg_col]  # 只取有时间值的行
+    unique_regs = reg_series.dropna().astype(str).unique()
     ws.cell(row=3, column=15).value = len(unique_regs)
+
+    # 收集统计信息用于预览
+    stats = {
+        '昨日总分钟': total_minutes,
+        '架次': num_flights,
+        '旧累计分钟': old_minutes,
+        '新累计分钟': new_total_minutes,
+        '航段数': len(segments),
+        '注册号去重数量': len(unique_regs),
+        '注册号列表': list(unique_regs),
+    }
 
     # 保存到临时文件
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
     wb.save(tmp.name)
-    return tmp.name
+    return tmp.name, stats
 
 
 # ---------- Streamlit 界面 ----------
@@ -130,6 +144,10 @@ if excel1_file and excel2_file:
     arr_col = st.selectbox("🏙️ 到达城市列", cols, index=cols.index(default_arr) if default_arr in cols else 0)
     reg_col = st.selectbox("✈️ 飞机注册号列（用于去重统计）", cols, index=cols.index(default_reg) if default_reg in cols else 0)
 
+    # 显示数据预览
+    with st.expander("📊 数据预览（前5行）"):
+        st.dataframe(excel2_df.head())
+
     if st.button("🚀 开始处理", type="primary"):
         with st.spinner("正在处理，请稍候..."):
             try:
@@ -138,8 +156,8 @@ if excel1_file and excel2_file:
                     tmp1.write(excel1_file.getvalue())
                     excel1_path = tmp1.name
 
-                # 执行更新
-                output_path = update_excel1(
+                # 执行更新，获取统计信息
+                output_path, stats = update_excel1(
                     excel1_path,
                     excel2_df,
                     flight_col,
@@ -149,10 +167,22 @@ if excel1_file and excel2_file:
                     today
                 )
 
+                # 显示处理统计
+                st.success("✅ 处理完成！以下是本次更新的统计信息：")
+                col_stats1, col_stats2 = st.columns(2)
+                with col_stats1:
+                    st.metric("昨日飞行时间（总分钟）", stats['昨日总分钟'])
+                    st.metric("架次（航段数）", stats['架次'])
+                    st.metric("旧累计分钟", stats['旧累计分钟'])
+                with col_stats2:
+                    st.metric("新累计分钟", stats['新累计分钟'])
+                    st.metric("航段数（拼接）", stats['航段数'])
+                    st.metric("去重注册号数量", stats['注册号去重数量'])
+                    st.write("去重注册号列表：", ", ".join(stats['注册号列表']))
+
                 # 提供下载
                 with open(output_path, 'rb') as f:
                     bytes_data = f.read()
-                st.success("✅ 处理完成！点击下方按钮下载更新后的 Excel 1")
                 st.download_button(
                     label="📥 下载 Excel 1（已更新）",
                     data=bytes_data,
@@ -173,33 +203,25 @@ if excel1_file and excel2_file:
 
 # ---------- 使用说明 ----------
 st.markdown("---")
-with st.expander("📖 使用说明与示例验证"):
+with st.expander("📖 使用说明与注意事项"):
     st.markdown("""
     **1. 上传文件**
-    - **Excel 1**：您日常填写的模板（例如 `中南-深圳局-天成商务航空有限公司-8月21日飞行数据.xlsx`），必须包含第2、3行，且 J~O 列为待更新区域。
-    - **Excel 2**：航段数据导出文件（例如 `航段数据导出 (28).xlsx`），需包含以下列：
-      - 飞行时间（如 `实际飞行时间`）
-      - 出发城市
-      - 到达城市
-      - 飞机注册号
+    - **Excel 1**：您的模板文件（如 `中南-深圳局-天成商务航空有限公司-8月21日飞行数据.xlsx`）。
+    - **Excel 2**：航段数据导出文件（如 `航段数据导出 (28).xlsx`）。
 
     **2. 选择列**
-    - 程序会自动识别常见列名，您只需检查确认，如有偏差可手动调整。
+    - 程序会自动匹配常见列名，您也可以手动调整。
+    - 请确保飞行时间列是 `HH:MM` 格式（支持中文冒号）。
 
-    **3. 自动更新内容（以您提供的数据为例）**
-    - **J2**：昨日日期 → `*昨日总飞行时间\n（昨日指8月21日）*`
-    - **J3**：昨日飞行时间总和 → `34:53`（9个航段的实际飞行时间累加）
-    - **K3**：航段条数 → `9`
-    - **L3**：累计飞行时间 = 模板原值（`130:40`） + 昨日新增（`34:53`）= `165:33`  
-      （若模板原值为空，则直接等于 `34:53`）
-    - **N3**：航段拼接 → `日本下地岛-香港、大连-上海虹桥、上海虹桥-三亚、重庆-昆明、昆明-北京首都、杭州-伊宁、伊宁-贵阳、泉州-美国安克雷奇、美国安克雷奇-美国贝德福德`
-    - **O3**：去重注册号数量 → `5`（B8309, B652R, B8160, B652Q, B65AP）
+    **3. 处理逻辑（关键）**
+    - 只统计飞行时间非空的航段（架次、时间、航段拼接均基于这些有效航段）。
+    - 注册号去重统计仅针对这些有效航段，且去除空值。
+    - 累计时间 = 模板中的原累计时间 + 昨日新增总时间。
 
-    **4. 下载**
-    - 处理完成后，点击下载按钮即可获取更新后的 Excel 1。
+    **4. 预览与验证**
+    - 处理后会显示统计信息，便于您核对是否正确。
+    - 如果发现注册号数量不符，请检查注册号列是否有空值或重复。
 
-    **⚠️ 常见问题**
-    - 若时间列包含 `34：53`（中文冒号），程序会自动转换。
-    - 若航段数据中有空行或缺失时间，程序会自动跳过（不计入架次和时间）。
-    - 模板中的累计时间（L3）请保持 `HH:MM` 格式，否则解析可能为0。
+    **5. 下载**
+    - 点击下载按钮获取更新后的 Excel 1。
     """)
