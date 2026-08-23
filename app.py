@@ -114,9 +114,9 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     return tmp.name, stats
 
 def run_feature_a():
-    st.markdown("上传 **昨日飞行数据（operation-每日飞行数据）** 和 **航段数据导出**，自动更新模板中的 J3、K3、L3、N3、O3。")
+    # 去掉了说明文字
     excel1_file = st.file_uploader("📂 上传昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
-    excel2_file = st.file_uploader("📂 上传航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
+    excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
 
     if excel1_file and excel2_file:
         with st.spinner("正在自动处理..."):
@@ -316,7 +316,6 @@ def run_feature_b():
     st.subheader("📂 模板管理")
     if st.session_state.template_wb is None:
         st.info("首次使用请上传模板文件。")
-        # 修改了下面的标签文字，加上 "上传："
         template_file = st.file_uploader("上传：桌面-Jetops申请一览-每日通航运行情况跟踪表（天成商务航空有限公司）20260708", type=["xlsx"], key="b_template_upload")
         if template_file:
             try:
@@ -347,7 +346,7 @@ def run_feature_b():
 
     # ---------- 数据上传 ----------
     st.subheader("📊 数据上传")
-    data_file = st.file_uploader("上传航段数据导出 Excel", type=["xlsx"], key="b_data_upload")
+    data_file = st.file_uploader("上传：航段数据导出", type=["xlsx"], key="b_data_upload")
 
     if data_file and st.session_state.template_wb is not None:
         try:
@@ -356,6 +355,61 @@ def run_feature_b():
             if len(df_raw) > 20:
                 st.warning(f"数据条数（{len(df_raw)}）超过模板预设的20行，多余数据将被忽略。")
 
+            # ---- 统计信息（替换原预览表格） ----
+            total_flights = len(df_raw)
+            # 状态分类
+            status_col = "航段状态" if "航段状态" in df_raw.columns else None
+            actual_depart_col = "实际出发" if "实际出发" in df_raw.columns else None
+            reg_col = "飞机注册号" if "飞机注册号" in df_raw.columns else None
+
+            if status_col:
+                landed = df_raw[df_raw[status_col].astype(str).str.contains("已执飞|已完成", na=False)]
+                not_landed = df_raw[~df_raw[status_col].astype(str).str.contains("已执飞|已完成", na=False)]
+            else:
+                landed = pd.DataFrame()
+                not_landed = df_raw
+
+            # 未落地：状态非已执飞 且 实际出发非空
+            if actual_depart_col:
+                unlanded = not_landed[not_landed[actual_depart_col].notna()]
+                not_executed = not_landed[not_landed[actual_depart_col].isna()]
+            else:
+                unlanded = pd.DataFrame()
+                not_executed = not_landed
+
+            landed_count = len(landed)
+            unlanded_count = len(unlanded)
+            not_executed_count = len(not_executed)
+
+            # 去重飞机注册号
+            if reg_col:
+                all_regs = df_raw[reg_col].dropna().astype(str).unique()
+                reg_list = sorted(all_regs)
+            else:
+                reg_list = []
+
+            # 生成汇报文字
+            report = f"鲁哥，今天{landed_count}班已落地、{unlanded_count}班未落地、{not_executed_count}班未起飞"
+            if reg_list:
+                report += f"，涉及飞机：{'、'.join(reg_list)}"
+            report += "。"
+
+            # 显示统计信息
+            st.subheader("📊 飞行计划统计")
+            col1, col2, col3 = st.columns(3)
+            col1.metric("飞行计划总数", total_flights)
+            col2.metric("已落地班次", landed_count)
+            col3.metric("未落地班次", unlanded_count)
+            col4, col5 = st.columns(2)
+            col4.metric("未执行班次", not_executed_count)
+            col5.metric("涉及飞机数", len(reg_list))
+            if reg_list:
+                st.write("**飞机注册号列表：**", "、".join(reg_list))
+
+            # 可复制汇报文字
+            st.text_area("📋 汇报文案（可复制）", report, height=80)
+
+            # ---- 继续原有数据填充逻辑 ----
             wb = st.session_state.template_wb
             ws = wb.active
             header_row = st.session_state.header_row
@@ -454,10 +508,6 @@ def run_feature_b():
             wb.save(output)
             output.seek(0)
 
-            preview_df = pd.DataFrame(records)
-            st.subheader("📋 数据预览（按原始顺序，最多20条）")
-            st.dataframe(preview_df, use_container_width=True)
-
             st.download_button(
                 label="⬇️ 下载填入数据的模板文件",
                 data=output,
@@ -481,7 +531,6 @@ def run_feature_b():
 st.set_page_config(page_title="飞行数据工具组合", layout="wide")
 st.title("🛩️ 飞行数据工具组合")
 
-# 修改选项卡名称
 tab1, tab2 = st.tabs(["📋 每日飞行数据-10：00发", "📄 每日通航运行情况跟踪表-16：30发"])
 
 with tab1:
