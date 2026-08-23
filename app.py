@@ -707,7 +707,7 @@ def run_feature_c():
                 if target_row is None:
                     target_row = ws.max_row + 1
 
-                # 填入数据
+                # 填入数据（只填值，不修改任何格式）
                 ws.cell(target_row, 1).value = supervision
                 ws.cell(target_row, 2).value = today_str
                 ws.cell(target_row, 3).value = category
@@ -721,33 +721,30 @@ def run_feature_c():
                 ws.cell(target_row, 11).value = actual_end
                 ws.cell(target_row, 12).value = model_str
                 ws.cell(target_row, 13).value = route_str
-                # N列空着，但为防止M列溢出，填入一个空格
-                ws.cell(target_row, 14).value = " "  # N列
+                # N列保持空（不填任何内容）
+                # ws.cell(target_row, 14).value = ""   # 不填
                 ws.cell(target_row, 15).value = yes
                 ws.cell(target_row, 16).value = yes
                 ws.cell(target_row, 17).value = yes
 
-                # ---------- 设置格式 ----------
+                # ---------- 设置格式（仅按用户要求） ----------
                 font10 = Font(size=10)
                 align_right = Alignment(horizontal='right', vertical='center')
                 align_left_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
 
                 # 对新增行所有单元格设置字体10号
                 for col in range(1, 18):
-                    cell = ws.cell(row=target_row, column=col)
-                    cell.font = font10
+                    ws.cell(row=target_row, column=col).font = font10
 
                 # B、I、J、K列右对齐
                 for col in [2, 9, 10, 11]:
                     ws.cell(row=target_row, column=col).alignment = align_right
 
-                # F、G列数字格式为 '0'（无千位分隔符，小数位0）
-                ws.cell(row=target_row, column=6).number_format = '0'
-                ws.cell(row=target_row, column=7).number_format = '0'
-
-                # M列不换行，并设置列宽
+                # M列不换行，并设置列宽（防止溢出遮挡N列）
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
-                ws.column_dimensions['M'].width = 50  # 防止过长遮挡
+                ws.column_dimensions['M'].width = 50
+
+                # 注意：不再设置 F、G 列的数字格式，让它们继承模板原有格式
 
                 # 保存
                 output = BytesIO()
