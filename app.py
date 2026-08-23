@@ -114,7 +114,6 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     return tmp.name, stats
 
 def run_feature_a():
-    # 去掉了说明文字
     excel1_file = st.file_uploader("📂 上传昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
 
@@ -357,7 +356,6 @@ def run_feature_b():
 
             # ---- 统计信息（替换原预览表格） ----
             total_flights = len(df_raw)
-            # 状态分类
             status_col = "航段状态" if "航段状态" in df_raw.columns else None
             actual_depart_col = "实际出发" if "实际出发" in df_raw.columns else None
             reg_col = "飞机注册号" if "飞机注册号" in df_raw.columns else None
@@ -369,7 +367,6 @@ def run_feature_b():
                 landed = pd.DataFrame()
                 not_landed = df_raw
 
-            # 未落地：状态非已执飞 且 实际出发非空
             if actual_depart_col:
                 unlanded = not_landed[not_landed[actual_depart_col].notna()]
                 not_executed = not_landed[not_landed[actual_depart_col].isna()]
@@ -381,18 +378,34 @@ def run_feature_b():
             unlanded_count = len(unlanded)
             not_executed_count = len(not_executed)
 
-            # 去重飞机注册号
             if reg_col:
                 all_regs = df_raw[reg_col].dropna().astype(str).unique()
                 reg_list = sorted(all_regs)
             else:
                 reg_list = []
 
-            # 生成汇报文字
-            report = f"鲁哥，今天{landed_count}班已落地、{unlanded_count}班未落地、{not_executed_count}班未起飞"
+            # ---- 生成汇报文案（新规则） ----
+            parts = []
+            if landed_count > 0:
+                parts.append(f"{landed_count}班已落地")
+            if unlanded_count > 0:
+                parts.append(f"{unlanded_count}班未落地")
+            if not_executed_count > 0:
+                parts.append(f"{not_executed_count}班未起飞")
+
+            if not parts:  # 理论上不会，但预防
+                report = "今天无飞行计划"
+            else:
+                if landed_count > 0 and unlanded_count == 0 and not_executed_count == 0:
+                    report = "今天飞完了"
+                else:
+                    report = "今天" + "、".join(parts)
+
+            # 飞机列表
             if reg_list:
-                report += f"，涉及飞机：{'、'.join(reg_list)}"
-            report += "。"
+                plane_text = f"今日有飞行计划的飞机：{'、'.join(reg_list)}"
+            else:
+                plane_text = ""
 
             # 显示统计信息
             st.subheader("📊 飞行计划统计")
@@ -406,8 +419,11 @@ def run_feature_b():
             if reg_list:
                 st.write("**飞机注册号列表：**", "、".join(reg_list))
 
-            # 可复制汇报文字
-            st.text_area("📋 汇报文案（可复制）", report, height=80)
+            # 汇报文案区域
+            full_report = report
+            if plane_text:
+                full_report += "\n" + plane_text
+            st.text_area("📋 汇报文案（可复制）", full_report, height=120)
 
             # ---- 继续原有数据填充逻辑 ----
             wb = st.session_state.template_wb
