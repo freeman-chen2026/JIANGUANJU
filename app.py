@@ -741,6 +741,10 @@ def run_feature_c():
                 for col in [2, 9, 10, 11]:
                     ws.cell(row=target_row, column=col).alignment = align_right
 
+                # F、G列数字格式为 '0'（无千位分隔符，小数位0）
+                ws.cell(row=target_row, column=6).number_format = '0'
+                ws.cell(row=target_row, column=7).number_format = '0'
+
                 # M列不换行，并设置列宽
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
                 ws.column_dimensions['M'].width = 50  # 防止过长遮挡
