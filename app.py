@@ -721,32 +721,29 @@ def run_feature_c():
                 ws.cell(target_row, 11).value = actual_end
                 ws.cell(target_row, 12).value = model_str
                 ws.cell(target_row, 13).value = route_str
-                # N列空着
+                # N列空着，但为防止M列溢出，填入一个空格
+                ws.cell(target_row, 14).value = " "  # N列
                 ws.cell(target_row, 15).value = yes
                 ws.cell(target_row, 16).value = yes
                 ws.cell(target_row, 17).value = yes
 
                 # ---------- 设置格式 ----------
-                # 字体10号
                 font10 = Font(size=10)
-                # B列右对齐
                 align_right = Alignment(horizontal='right', vertical='center')
-                # M列不换行，不自动缩小，超出部分截断（不显示超出）
-                align_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
+                align_left_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
 
-                # 对新增行的所有单元格设置字体10号
-                for col in range(1, 18):  # A-Q列
+                # 对新增行所有单元格设置字体10号
+                for col in range(1, 18):
                     cell = ws.cell(row=target_row, column=col)
                     cell.font = font10
 
-                # B列右对齐
-                ws.cell(row=target_row, column=2).alignment = align_right
+                # B、I、J、K列右对齐
+                for col in [2, 9, 10, 11]:
+                    ws.cell(row=target_row, column=col).alignment = align_right
 
-                # M列不换行
-                ws.cell(row=target_row, column=13).alignment = align_no_wrap
-
-                # 设置M列列宽（适当宽一些，但用户说不要显示超出，所以列宽固定，不自动换行）
-                ws.column_dimensions['M'].width = 40  # 可调整
+                # M列不换行，并设置列宽
+                ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
+                ws.column_dimensions['M'].width = 50  # 防止过长遮挡
 
                 # 保存
                 output = BytesIO()
