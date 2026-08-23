@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
+from openpyxl.styles import Font, Alignment
 from datetime import datetime, timedelta
 import tempfile
 import os
@@ -543,7 +544,7 @@ def run_feature_b():
 # 功能 C：生成每日运行跟踪表（新功能）
 # ==============================
 def run_feature_c():
-    # 注册号到机型的映射（与功能B共用，但为了独立，复制一份）
+    # 注册号到机型的映射
     ICAO_MAP = {
         "B65AP": "GLF4",
         "B652R": "GLF4",
@@ -586,10 +587,10 @@ def run_feature_c():
                 # 1. 总架次
                 total_flights = len(df)
 
-                # 2. 实际总架次（默认等于总架次，但用户说一般一样）
-                actual_flights = total_flights  # 暂定
+                # 2. 实际总架次（默认等于总架次）
+                actual_flights = total_flights
 
-                # 3. 运行种类：根据用途列区分
+                # 3. 运行种类
                 usage_set = set()
                 for u in df["用途"].dropna():
                     u_str = str(u).strip()
@@ -602,9 +603,7 @@ def run_feature_c():
                 # 4. 状态判断
                 status_col = "航段状态"
                 has_actual_depart = "实际出发" in df.columns
-                # 判断是否所有航段都已执飞或已完成
                 all_landed = all(str(s).strip() in ["已执飞", "已完成"] for s in df[status_col].dropna())
-                # 判断是否有航段已开始（有实际出发时间）
                 if has_actual_depart:
                     any_started = any(pd.notna(s) for s in df["实际出发"])
                 else:
@@ -617,18 +616,14 @@ def run_feature_c():
                 else:
                     status_text = "未实施"
 
-                # 5. 开始时间：第一班实际出发时间（如有），否则计划出发时间
+                # 5. 开始时间
                 if has_actual_depart:
-                    # 取实际出发时间非空的最小值（按时间排序）
                     valid_depart = df[df["实际出发"].notna()]
                     if not valid_depart.empty:
-                        # 将时间转为字符串排序
                         times = valid_depart["实际出发"].apply(lambda x: str(x).strip())
-                        # 处理时间格式，取最早
                         earliest = min(times, key=lambda t: t if t else "99:99")
                         start_time = format_time(earliest)
                     else:
-                        # 否则取计划出发最早
                         if "计划出发" in df.columns:
                             plan_times = df["计划出发"].dropna().apply(lambda x: str(x).strip())
                             if not plan_times.empty:
@@ -639,7 +634,6 @@ def run_feature_c():
                         else:
                             start_time = ""
                 else:
-                    # 无实际出发列，用计划出发
                     if "计划出发" in df.columns:
                         plan_times = df["计划出发"].dropna().apply(lambda x: str(x).strip())
                         if not plan_times.empty:
@@ -650,7 +644,7 @@ def run_feature_c():
                     else:
                         start_time = ""
 
-                # 6. 计划结束时间：最晚预计到达时间（取最大）
+                # 6. 计划结束时间
                 if "预计到达" in df.columns:
                     plan_end_times = df["预计到达"].dropna().apply(lambda x: str(x).strip())
                     if not plan_end_times.empty:
@@ -661,7 +655,7 @@ def run_feature_c():
                 else:
                     plan_end = ""
 
-                # 7. 实际结束时间：最晚实际到达时间（如果全部落地）
+                # 7. 实际结束时间
                 if all_landed and "实际到达" in df.columns:
                     actual_end_times = df["实际到达"].dropna().apply(lambda x: str(x).strip())
                     if not actual_end_times.empty:
@@ -672,7 +666,7 @@ def run_feature_c():
                 else:
                     actual_end = ""
 
-                # 8. 航空器型号：根据注册号映射
+                # 8. 航空器型号
                 regs = df["飞机注册号"].dropna().astype(str).str.upper().unique()
                 models = set()
                 for reg in regs:
@@ -681,7 +675,7 @@ def run_feature_c():
                         models.add(model)
                 model_str = "、".join(sorted(models)) if models else ""
 
-                # 9. 飞行航线：出发城市-到达城市
+                # 9. 飞行航线
                 routes = []
                 for _, row in df.iterrows():
                     dep = str(row.get("出发城市", "")).strip()
@@ -694,48 +688,67 @@ def run_feature_c():
                         routes.append(arr)
                 route_str = "、".join(routes)
 
-                # 10. 其他固定列
+                # 10. 固定值
                 supervision = "深圳局"
                 category = "公务航空飞行"
                 operator = "天成商务航空有限公司"
-                # 第14列空着
-                # 第15-17列是
                 yes = "是"
 
-                # 加载模板，找到第一个空行
+                # 加载模板
                 wb = load_workbook(template_file)
                 ws = wb.active
 
-                # 寻找第一个空行（从第2行开始，因为第1行是表头）
+                # 寻找第一个空行
                 target_row = None
-                for row in range(2, ws.max_row + 2):  # 多一行以防万一
+                for row in range(2, ws.max_row + 2):
                     if ws.cell(row, 1).value is None or str(ws.cell(row, 1).value).strip() == "":
                         target_row = row
                         break
                 if target_row is None:
-                    # 如果没有找到空行，追加到末尾
                     target_row = ws.max_row + 1
 
                 # 填入数据
-                ws.cell(target_row, 1).value = supervision          # A
-                ws.cell(target_row, 2).value = today_str            # B
-                ws.cell(target_row, 3).value = category             # C
-                ws.cell(target_row, 4).value = operator             # D
-                ws.cell(target_row, 5).value = run_types            # E
-                ws.cell(target_row, 6).value = total_flights        # F
-                ws.cell(target_row, 7).value = actual_flights       # G
-                ws.cell(target_row, 8).value = status_text          # H
-                ws.cell(target_row, 9).value = start_time           # I
-                ws.cell(target_row, 10).value = plan_end            # J
-                ws.cell(target_row, 11).value = actual_end          # K
-                ws.cell(target_row, 12).value = model_str           # L
-                ws.cell(target_row, 13).value = route_str           # M
+                ws.cell(target_row, 1).value = supervision
+                ws.cell(target_row, 2).value = today_str
+                ws.cell(target_row, 3).value = category
+                ws.cell(target_row, 4).value = operator
+                ws.cell(target_row, 5).value = run_types
+                ws.cell(target_row, 6).value = total_flights
+                ws.cell(target_row, 7).value = actual_flights
+                ws.cell(target_row, 8).value = status_text
+                ws.cell(target_row, 9).value = start_time
+                ws.cell(target_row, 10).value = plan_end
+                ws.cell(target_row, 11).value = actual_end
+                ws.cell(target_row, 12).value = model_str
+                ws.cell(target_row, 13).value = route_str
                 # N列空着
-                ws.cell(target_row, 15).value = yes                 # O
-                ws.cell(target_row, 16).value = yes                 # P
-                ws.cell(target_row, 17).value = yes                 # Q
+                ws.cell(target_row, 15).value = yes
+                ws.cell(target_row, 16).value = yes
+                ws.cell(target_row, 17).value = yes
 
-                # 保存到临时文件
+                # ---------- 设置格式 ----------
+                # 字体10号
+                font10 = Font(size=10)
+                # B列右对齐
+                align_right = Alignment(horizontal='right', vertical='center')
+                # M列不换行，不自动缩小，超出部分截断（不显示超出）
+                align_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
+
+                # 对新增行的所有单元格设置字体10号
+                for col in range(1, 18):  # A-Q列
+                    cell = ws.cell(row=target_row, column=col)
+                    cell.font = font10
+
+                # B列右对齐
+                ws.cell(row=target_row, column=2).alignment = align_right
+
+                # M列不换行
+                ws.cell(row=target_row, column=13).alignment = align_no_wrap
+
+                # 设置M列列宽（适当宽一些，但用户说不要显示超出，所以列宽固定，不自动换行）
+                ws.column_dimensions['M'].width = 40  # 可调整
+
+                # 保存
                 output = BytesIO()
                 wb.save(output)
                 output.seek(0)
