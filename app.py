@@ -114,7 +114,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     return tmp.name, stats
 
 def run_feature_a():
-    excel1_file = st.file_uploader("📂 上传昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
+    excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
 
     if excel1_file and excel2_file:
@@ -384,7 +384,7 @@ def run_feature_b():
             else:
                 reg_list = []
 
-            # ---- 生成汇报文案（新规则） ----
+            # ---- 生成汇报文案 ----
             parts = []
             if landed_count > 0:
                 parts.append(f"{landed_count}班已落地")
@@ -393,7 +393,7 @@ def run_feature_b():
             if not_executed_count > 0:
                 parts.append(f"{not_executed_count}班未起飞")
 
-            if not parts:  # 理论上不会，但预防
+            if not parts:
                 report = "今天无飞行计划"
             else:
                 if landed_count > 0 and unlanded_count == 0 and not_executed_count == 0:
@@ -401,7 +401,6 @@ def run_feature_b():
                 else:
                     report = "今天" + "、".join(parts)
 
-            # 飞机列表
             if reg_list:
                 plane_text = f"今日有飞行计划的飞机：{'、'.join(reg_list)}"
             else:
@@ -419,7 +418,6 @@ def run_feature_b():
             if reg_list:
                 st.write("**飞机注册号列表：**", "、".join(reg_list))
 
-            # 汇报文案区域
             full_report = report
             if plane_text:
                 full_report += "\n" + plane_text
@@ -542,12 +540,236 @@ def run_feature_b():
             st.info("👆 请上传航段数据 Excel 文件。")
 
 # ==============================
-# 主界面：使用选项卡切换两个功能
+# 功能 C：生成每日运行跟踪表（新功能）
+# ==============================
+def run_feature_c():
+    # 注册号到机型的映射（与功能B共用，但为了独立，复制一份）
+    ICAO_MAP = {
+        "B65AP": "GLF4",
+        "B652R": "GLF4",
+        "B652S": "GLF4",
+        "B8105": "GLEX",
+        "B8309": "GLF5",
+        "B652Q": "GLF4",
+        "B3926": "LJ60",
+        "B8160": "GLF5",
+        "B8262": "GLF4",
+        "B8292": "GLF5",
+    }
+
+    st.markdown("上传 **天成商务航空每日运行跟踪** 模板和 **航段数据导出**，自动在模板最下方新增一行今日汇总数据。")
+
+    template_file = st.file_uploader("📂 上传：天成商务航空每日运行跟踪模板", type=["xlsx"], key="c_template")
+    data_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx"], key="c_data")
+
+    if template_file and data_file:
+        with st.spinner("正在处理..."):
+            try:
+                # 读取航段数据
+                keywords = ["客户", "航班号", "出发城市", "到达城市", "实际出发", "计划出发", "预计到达", "实际到达", "航段状态", "飞机注册号", "用途"]
+                df = read_excel_with_auto_header(data_file, keywords)
+                if df.empty:
+                    st.error("航段数据为空或格式不正确。")
+                    return
+
+                # 确保必要的列存在
+                required_cols = ["飞机注册号", "用途", "出发城市", "到达城市", "航段状态"]
+                for col in required_cols:
+                    if col not in df.columns:
+                        st.error(f"航段数据缺少必要列：{col}")
+                        return
+
+                # 获取今日日期
+                today = datetime.now().date()
+                today_str = today.strftime("%Y/%m/%d")  # 格式如 2026/08/23
+
+                # 1. 总架次
+                total_flights = len(df)
+
+                # 2. 实际总架次（默认等于总架次，但用户说一般一样）
+                actual_flights = total_flights  # 暂定
+
+                # 3. 运行种类：根据用途列区分
+                usage_set = set()
+                for u in df["用途"].dropna():
+                    u_str = str(u).strip()
+                    if "调机" in u_str:
+                        usage_set.add("调机飞行")
+                    else:
+                        usage_set.add("公务飞行")
+                run_types = "、".join(sorted(usage_set)) if usage_set else "公务飞行"
+
+                # 4. 状态判断
+                status_col = "航段状态"
+                has_actual_depart = "实际出发" in df.columns
+                # 判断是否所有航段都已执飞或已完成
+                all_landed = all(str(s).strip() in ["已执飞", "已完成"] for s in df[status_col].dropna())
+                # 判断是否有航段已开始（有实际出发时间）
+                if has_actual_depart:
+                    any_started = any(pd.notna(s) for s in df["实际出发"])
+                else:
+                    any_started = any(str(s).strip() in ["已执飞", "已完成", "执飞中"] for s in df[status_col].dropna())
+
+                if all_landed:
+                    status_text = "已实施，全部结束"
+                elif any_started:
+                    status_text = "已实施，未全部结束"
+                else:
+                    status_text = "未实施"
+
+                # 5. 开始时间：第一班实际出发时间（如有），否则计划出发时间
+                if has_actual_depart:
+                    # 取实际出发时间非空的最小值（按时间排序）
+                    valid_depart = df[df["实际出发"].notna()]
+                    if not valid_depart.empty:
+                        # 将时间转为字符串排序
+                        times = valid_depart["实际出发"].apply(lambda x: str(x).strip())
+                        # 处理时间格式，取最早
+                        earliest = min(times, key=lambda t: t if t else "99:99")
+                        start_time = format_time(earliest)
+                    else:
+                        # 否则取计划出发最早
+                        if "计划出发" in df.columns:
+                            plan_times = df["计划出发"].dropna().apply(lambda x: str(x).strip())
+                            if not plan_times.empty:
+                                earliest_plan = min(plan_times, key=lambda t: t if t else "99:99")
+                                start_time = format_time(earliest_plan)
+                            else:
+                                start_time = ""
+                        else:
+                            start_time = ""
+                else:
+                    # 无实际出发列，用计划出发
+                    if "计划出发" in df.columns:
+                        plan_times = df["计划出发"].dropna().apply(lambda x: str(x).strip())
+                        if not plan_times.empty:
+                            earliest_plan = min(plan_times, key=lambda t: t if t else "99:99")
+                            start_time = format_time(earliest_plan)
+                        else:
+                            start_time = ""
+                    else:
+                        start_time = ""
+
+                # 6. 计划结束时间：最晚预计到达时间（取最大）
+                if "预计到达" in df.columns:
+                    plan_end_times = df["预计到达"].dropna().apply(lambda x: str(x).strip())
+                    if not plan_end_times.empty:
+                        latest_plan = max(plan_end_times, key=lambda t: t if t else "00:00")
+                        plan_end = format_time(latest_plan)
+                    else:
+                        plan_end = ""
+                else:
+                    plan_end = ""
+
+                # 7. 实际结束时间：最晚实际到达时间（如果全部落地）
+                if all_landed and "实际到达" in df.columns:
+                    actual_end_times = df["实际到达"].dropna().apply(lambda x: str(x).strip())
+                    if not actual_end_times.empty:
+                        latest_actual = max(actual_end_times, key=lambda t: t if t else "00:00")
+                        actual_end = format_time(latest_actual)
+                    else:
+                        actual_end = ""
+                else:
+                    actual_end = ""
+
+                # 8. 航空器型号：根据注册号映射
+                regs = df["飞机注册号"].dropna().astype(str).str.upper().unique()
+                models = set()
+                for reg in regs:
+                    model = ICAO_MAP.get(reg, "")
+                    if model:
+                        models.add(model)
+                model_str = "、".join(sorted(models)) if models else ""
+
+                # 9. 飞行航线：出发城市-到达城市
+                routes = []
+                for _, row in df.iterrows():
+                    dep = str(row.get("出发城市", "")).strip()
+                    arr = str(row.get("到达城市", "")).strip()
+                    if dep and arr:
+                        routes.append(f"{dep}-{arr}")
+                    elif dep:
+                        routes.append(dep)
+                    elif arr:
+                        routes.append(arr)
+                route_str = "、".join(routes)
+
+                # 10. 其他固定列
+                supervision = "深圳局"
+                category = "公务航空飞行"
+                operator = "天成商务航空有限公司"
+                # 第14列空着
+                # 第15-17列是
+                yes = "是"
+
+                # 加载模板，找到第一个空行
+                wb = load_workbook(template_file)
+                ws = wb.active
+
+                # 寻找第一个空行（从第2行开始，因为第1行是表头）
+                target_row = None
+                for row in range(2, ws.max_row + 2):  # 多一行以防万一
+                    if ws.cell(row, 1).value is None or str(ws.cell(row, 1).value).strip() == "":
+                        target_row = row
+                        break
+                if target_row is None:
+                    # 如果没有找到空行，追加到末尾
+                    target_row = ws.max_row + 1
+
+                # 填入数据
+                ws.cell(target_row, 1).value = supervision          # A
+                ws.cell(target_row, 2).value = today_str            # B
+                ws.cell(target_row, 3).value = category             # C
+                ws.cell(target_row, 4).value = operator             # D
+                ws.cell(target_row, 5).value = run_types            # E
+                ws.cell(target_row, 6).value = total_flights        # F
+                ws.cell(target_row, 7).value = actual_flights       # G
+                ws.cell(target_row, 8).value = status_text          # H
+                ws.cell(target_row, 9).value = start_time           # I
+                ws.cell(target_row, 10).value = plan_end            # J
+                ws.cell(target_row, 11).value = actual_end          # K
+                ws.cell(target_row, 12).value = model_str           # L
+                ws.cell(target_row, 13).value = route_str           # M
+                # N列空着
+                ws.cell(target_row, 15).value = yes                 # O
+                ws.cell(target_row, 16).value = yes                 # P
+                ws.cell(target_row, 17).value = yes                 # Q
+
+                # 保存到临时文件
+                output = BytesIO()
+                wb.save(output)
+                output.seek(0)
+
+                # 显示统计摘要
+                st.success("✅ 处理完成！已添加一行新数据。")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("总架次", total_flights)
+                col2.metric("状态", status_text)
+                col3.metric("航空器型号数", len(models))
+
+                st.write(f"**开始时间：** {start_time}")
+                st.write(f"**计划结束：** {plan_end}")
+                st.write(f"**实际结束：** {actual_end if actual_end else '未结束'}")
+                st.write(f"**航线：** {route_str[:100]}{'...' if len(route_str)>100 else ''}")
+
+                st.download_button(
+                    label="⬇️ 下载更新后的模板",
+                    data=output,
+                    file_name="天成商务航空每日运行跟踪_生成.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
+
+            except Exception as e:
+                st.error(f"处理失败：{e}")
+                st.exception(e)
+
+# ==============================
+# 主界面：使用选项卡切换三个功能
 # ==============================
 st.set_page_config(page_title="飞行数据工具组合", layout="wide")
 st.title("🛩️ 飞行数据工具组合")
 
-tab1, tab2 = st.tabs(["📋 每日飞行数据-10：00发", "📄 每日通航运行情况跟踪表-16：30发"])
+tab1, tab2, tab3 = st.tabs(["📋 每日飞行数据-10：00发", "📄 每日通航运行情况跟踪表-16：30发", "📊 生成每日运行跟踪表"])
 
 with tab1:
     run_feature_a()
@@ -555,4 +777,7 @@ with tab1:
 with tab2:
     run_feature_b()
 
-st.caption("💡 功能1自动更新模板的汇总数据，功能2按航段逐行填写备案表。")
+with tab3:
+    run_feature_c()
+
+st.caption("💡 功能1自动更新模板的汇总数据；功能2按航段逐行填写备案表；功能3生成每日运行跟踪汇总一行。")
