@@ -316,7 +316,8 @@ def run_feature_b():
     st.subheader("📂 模板管理")
     if st.session_state.template_wb is None:
         st.info("首次使用请上传模板文件。")
-        template_file = st.file_uploader("上传带格式的模板 Excel（含20条空行）", type=["xlsx"], key="b_template_upload")
+        # 修改了下面的标签文字
+        template_file = st.file_uploader("桌面-Jetops申请一览-每日通航运行情况跟踪表（天成商务航空有限公司）20260708", type=["xlsx"], key="b_template_upload")
         if template_file:
             try:
                 wb = load_workbook(template_file)
