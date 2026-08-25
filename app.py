@@ -9,22 +9,49 @@ import os
 import re
 
 # ==============================
-# 功能 A：每日飞行数据自动更新（模板 J3、K3、L3、N3、O3）
+# 通用工具函数（供各功能使用）
 # ==============================
 def parse_duration(dur_str) -> int:
+    """
+    将各种时间格式转换为总分钟数（整数），忽略秒。
+    支持格式：
+      - "HH:MM" 或 "HH:MM:SS"
+      - "X days, HH:MM" 或 "X days, HH:MM:SS"
+      - 纯数字（视为分钟）
+    """
     if pd.isna(dur_str):
         return 0
     s = str(dur_str).strip().replace('：', ':')
-    match = re.search(r'(\d+):(\d{2})', s)
+    s_lower = s.lower()
+
+    # 尝试匹配天数格式
+    days_pattern = re.compile(r'(\d+)\s*days?\s*,?\s*(\d+):(\d{2})(?::(\d{2}))?', re.IGNORECASE)
+    match = days_pattern.search(s_lower)
     if match:
-        try:
-            return int(match.group(1)) * 60 + int(match.group(2))
-        except:
-            return 0
-    return 0
+        days = int(match.group(1))
+        hours = int(match.group(2))
+        minutes = int(match.group(3))
+        return days * 24 * 60 + hours * 60 + minutes
+
+    # 尝试匹配纯时间格式 HH:MM 或 HH:MM:SS
+    time_pattern = re.compile(r'(\d+):(\d{2})(?::(\d{2}))?')
+    match = time_pattern.search(s)
+    if match:
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        return hours * 60 + minutes
+
+    # 尝试解析为数字（分钟）
+    try:
+        return int(float(s))
+    except:
+        return 0
 
 def format_duration(total_minutes: int) -> str:
-    return f"{total_minutes // 60}:{total_minutes % 60:02d}"
+    """将总分钟数格式化为 HH:MM:SS（小时不限位数，秒固定为00）"""
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    return f"{hours}:{minutes:02d}:00"
 
 def detect_header_row(df_raw, keywords):
     best_score = -1
@@ -64,6 +91,24 @@ def auto_match_column(df, candidates):
                 return col
     return None
 
+def format_time(value):
+    if pd.isna(value) or value == "" or value is None:
+        return ""
+    if isinstance(value, str):
+        if ":" in value:
+            parts = value.split(":")
+            if len(parts) == 2:
+                return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}:00"
+            elif len(parts) == 3:
+                return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}:{parts[2].zfill(2)}"
+        return value
+    if hasattr(value, "strftime"):
+        return value.strftime("%H:%M:%S")
+    return str(value)
+
+# ==============================
+# 功能 A：每日飞行数据自动更新（模板 J3、K3、L3、N3、O3）
+# ==============================
 def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col):
     wb = load_workbook(excel1_path)
     ws = wb.active
@@ -79,28 +124,28 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     for val in valid_df[flight_col]:
         total_minutes += parse_duration(val)
 
-    ws.cell(row=3, column=10).value = format_duration(total_minutes)
-    ws.cell(row=3, column=11).value = len(valid_df)
+    ws.cell(row=3, column=10).value = format_duration(total_minutes)  # J3
+    ws.cell(row=3, column=11).value = len(valid_df)                  # K3
 
     old_l3 = ws.cell(row=3, column=12).value
     old_minutes = parse_duration(old_l3) if old_l3 is not None else 0
     new_total = old_minutes + total_minutes
-    ws.cell(row=3, column=12).value = format_duration(new_total)
+    ws.cell(row=3, column=12).value = format_duration(new_total)     # L3
 
-    segments = []
+    # N3：收集所有出发城市和到达城市，去重后顿号连接
+    locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
         arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
-        if dep and arr:
-            segments.append(f"{dep}-{arr}")
-        elif dep:
-            segments.append(dep)
-        elif arr:
-            segments.append(arr)
-    ws.cell(row=3, column=14).value = '、'.join(segments)
+        if dep:
+            locations.add(dep)
+        if arr:
+            locations.add(arr)
+    location_list = sorted(locations)  # 排序保证顺序一致
+    ws.cell(row=3, column=14).value = '、'.join(location_list)        # N3
 
     reg_series = valid_df[reg_col].dropna()
-    ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())
+    ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())  # O3
 
     stats = {
         '昨日飞行时间': format_duration(total_minutes),
@@ -115,6 +160,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     return tmp.name, stats
 
 def run_feature_a():
+    st.markdown("上传 **昨日飞行数据（operation-每日飞行数据）** 和 **航段数据导出**，自动更新模板中的 J3、K3、L3、N3、O3。")
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
 
@@ -223,39 +269,13 @@ def map_usage(usage):
     else:
         return "公务飞行", "私用飞行"
 
-def format_time(value):
-    if pd.isna(value) or value == "" or value is None:
-        return ""
-    if isinstance(value, str):
-        if ":" in value:
-            parts = value.split(":")
-            if len(parts) == 2:
-                return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}:00"
-            elif len(parts) == 3:
-                return f"{parts[0].zfill(2)}:{parts[1].zfill(2)}:{parts[2].zfill(2)}"
-        return value
-    if hasattr(value, "strftime"):
-        return value.strftime("%H:%M:%S")
-    return str(value)
-
 def parse_duration_to_minutes(duration_str):
     if pd.isna(duration_str) or duration_str == "" or duration_str is None:
         return None
     s = str(duration_str).strip()
     try:
-        if s.count(":") == 1:
-            parts = s.split(":")
-            if len(parts) == 2:
-                h = int(parts[0])
-                m = int(parts[1])
-                return h * 60 + m
-        elif s.count(":") == 2:
-            parts = s.split(":")
-            h = int(parts[0])
-            m = int(parts[1])
-            return h * 60 + m
-        else:
-            return int(float(s))
+        minutes = parse_duration(s)  # 使用通用解析
+        return minutes
     except:
         return None
 
@@ -355,7 +375,7 @@ def run_feature_b():
             if len(df_raw) > 20:
                 st.warning(f"数据条数（{len(df_raw)}）超过模板预设的20行，多余数据将被忽略。")
 
-            # ---- 统计信息（替换原预览表格） ----
+            # ---- 统计信息 ----
             total_flights = len(df_raw)
             status_col = "航段状态" if "航段状态" in df_raw.columns else None
             actual_depart_col = "实际出发" if "实际出发" in df_raw.columns else None
@@ -385,7 +405,7 @@ def run_feature_b():
             else:
                 reg_list = []
 
-            # ---- 生成汇报文案 ----
+            # ---- 汇报文案 ----
             parts = []
             if landed_count > 0:
                 parts.append(f"{landed_count}班已落地")
@@ -407,7 +427,6 @@ def run_feature_b():
             else:
                 plane_text = ""
 
-            # 显示统计信息
             st.subheader("📊 飞行计划统计")
             col1, col2, col3 = st.columns(3)
             col1.metric("飞行计划总数", total_flights)
@@ -424,7 +443,7 @@ def run_feature_b():
                 full_report += "\n" + plane_text
             st.text_area("📋 汇报文案（可复制）", full_report, height=120)
 
-            # ---- 继续原有数据填充逻辑 ----
+            # ---- 填充数据 ----
             wb = st.session_state.template_wb
             ws = wb.active
             header_row = st.session_state.header_row
@@ -541,10 +560,9 @@ def run_feature_b():
             st.info("👆 请上传航段数据 Excel 文件。")
 
 # ==============================
-# 功能 C：生成每日运行跟踪表（新功能）
+# 功能 C：生成每日运行跟踪表
 # ==============================
 def run_feature_c():
-    # 注册号到机型的映射
     ICAO_MAP = {
         "B65AP": "GLF4",
         "B652R": "GLF4",
@@ -566,31 +584,24 @@ def run_feature_c():
     if template_file and data_file:
         with st.spinner("正在处理..."):
             try:
-                # 读取航段数据
                 keywords = ["客户", "航班号", "出发城市", "到达城市", "实际出发", "计划出发", "预计到达", "实际到达", "航段状态", "飞机注册号", "用途"]
                 df = read_excel_with_auto_header(data_file, keywords)
                 if df.empty:
                     st.error("航段数据为空或格式不正确。")
                     return
 
-                # 确保必要的列存在
                 required_cols = ["飞机注册号", "用途", "出发城市", "到达城市", "航段状态"]
                 for col in required_cols:
                     if col not in df.columns:
                         st.error(f"航段数据缺少必要列：{col}")
                         return
 
-                # 获取今日日期
                 today = datetime.now().date()
-                today_str = today.strftime("%Y/%m/%d")  # 格式如 2026/08/23
+                today_str = today.strftime("%Y/%m/%d")
 
-                # 1. 总架次
                 total_flights = len(df)
-
-                # 2. 实际总架次（默认等于总架次）
                 actual_flights = total_flights
 
-                # 3. 运行种类
                 usage_set = set()
                 for u in df["用途"].dropna():
                     u_str = str(u).strip()
@@ -600,7 +611,6 @@ def run_feature_c():
                         usage_set.add("公务飞行")
                 run_types = "、".join(sorted(usage_set)) if usage_set else "公务飞行"
 
-                # 4. 状态判断
                 status_col = "航段状态"
                 has_actual_depart = "实际出发" in df.columns
                 all_landed = all(str(s).strip() in ["已执飞", "已完成"] for s in df[status_col].dropna())
@@ -616,7 +626,7 @@ def run_feature_c():
                 else:
                     status_text = "未实施"
 
-                # 5. 开始时间
+                # 开始时间
                 if has_actual_depart:
                     valid_depart = df[df["实际出发"].notna()]
                     if not valid_depart.empty:
@@ -644,7 +654,7 @@ def run_feature_c():
                     else:
                         start_time = ""
 
-                # 6. 计划结束时间
+                # 计划结束
                 if "预计到达" in df.columns:
                     plan_end_times = df["预计到达"].dropna().apply(lambda x: str(x).strip())
                     if not plan_end_times.empty:
@@ -655,7 +665,7 @@ def run_feature_c():
                 else:
                     plan_end = ""
 
-                # 7. 实际结束时间
+                # 实际结束
                 if all_landed and "实际到达" in df.columns:
                     actual_end_times = df["实际到达"].dropna().apply(lambda x: str(x).strip())
                     if not actual_end_times.empty:
@@ -666,7 +676,7 @@ def run_feature_c():
                 else:
                     actual_end = ""
 
-                # 8. 航空器型号
+                # 航空器型号
                 regs = df["飞机注册号"].dropna().astype(str).str.upper().unique()
                 models = set()
                 for reg in regs:
@@ -675,7 +685,7 @@ def run_feature_c():
                         models.add(model)
                 model_str = "、".join(sorted(models)) if models else ""
 
-                # 9. 飞行航线
+                # 航线
                 routes = []
                 for _, row in df.iterrows():
                     dep = str(row.get("出发城市", "")).strip()
@@ -688,17 +698,15 @@ def run_feature_c():
                         routes.append(arr)
                 route_str = "、".join(routes)
 
-                # 10. 固定值
                 supervision = "深圳局"
                 category = "公务航空飞行"
                 operator = "天成商务航空有限公司"
                 yes = "是"
 
-                # 加载模板
                 wb = load_workbook(template_file)
                 ws = wb.active
 
-                # 寻找第一个空行
+                # 找第一个空行
                 target_row = None
                 for row in range(2, ws.max_row + 2):
                     if ws.cell(row, 1).value is None or str(ws.cell(row, 1).value).strip() == "":
@@ -707,7 +715,7 @@ def run_feature_c():
                 if target_row is None:
                     target_row = ws.max_row + 1
 
-                # 填入数据（只填值，不修改任何格式）
+                # 填值
                 ws.cell(target_row, 1).value = supervision
                 ws.cell(target_row, 2).value = today_str
                 ws.cell(target_row, 3).value = category
@@ -721,37 +729,29 @@ def run_feature_c():
                 ws.cell(target_row, 11).value = actual_end
                 ws.cell(target_row, 12).value = model_str
                 ws.cell(target_row, 13).value = route_str
-                # N列保持空（不填任何内容）
-                # ws.cell(target_row, 14).value = ""   # 不填
+                # N列留空
                 ws.cell(target_row, 15).value = yes
                 ws.cell(target_row, 16).value = yes
                 ws.cell(target_row, 17).value = yes
 
-                # ---------- 设置格式（仅按用户要求） ----------
+                # 格式
                 font10 = Font(size=10)
                 align_right = Alignment(horizontal='right', vertical='center')
                 align_left_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
 
-                # 对新增行所有单元格设置字体10号
                 for col in range(1, 18):
                     ws.cell(row=target_row, column=col).font = font10
 
-                # B、I、J、K列右对齐
                 for col in [2, 9, 10, 11]:
                     ws.cell(row=target_row, column=col).alignment = align_right
 
-                # M列不换行，并设置列宽（防止溢出遮挡N列）
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
                 ws.column_dimensions['M'].width = 50
 
-                # 注意：不再设置 F、G 列的数字格式，让它们继承模板原有格式
-
-                # 保存
                 output = BytesIO()
                 wb.save(output)
                 output.seek(0)
 
-                # 显示统计摘要
                 st.success("✅ 处理完成！已添加一行新数据。")
                 col1, col2, col3 = st.columns(3)
                 col1.metric("总架次", total_flights)
@@ -775,7 +775,7 @@ def run_feature_c():
                 st.exception(e)
 
 # ==============================
-# 主界面：使用选项卡切换三个功能
+# 主界面
 # ==============================
 st.set_page_config(page_title="飞行数据工具组合", layout="wide")
 st.title("🛩️ 飞行数据工具组合")
