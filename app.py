@@ -577,7 +577,6 @@ def run_feature_c():
 
     st.markdown("上传 **天成商务航空每日运行跟踪** 模板和 **航段数据导出**，自动在模板最下方新增一行今日汇总数据。")
 
-    # 修改了此处标签文字
     template_file = st.file_uploader("📂 上传：Operation-每日通航运行情况-天成商务航空每日运行跟踪", type=["xlsx"], key="c_template")
     data_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx"], key="c_data")
 
@@ -736,7 +735,7 @@ def run_feature_c():
                 ws.cell(target_row, 16).value = yes
                 ws.cell(target_row, 17).value = yes
 
-                # ---------- 设置格式（仅必要的，不影响F/G样式） ----------
+                # ---------- 设置格式 ----------
                 # 1. 字体10号（所有新增单元格）
                 font10 = Font(size=10)
                 for col in range(1, 18):
@@ -752,7 +751,9 @@ def run_feature_c():
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
                 ws.column_dimensions['M'].width = 50
 
-                # 注意：F和G列不做任何样式设置，它们会自动继承模板原有格式
+                # 4. F列（第6列）和G列（第7列）设置为数值格式，小数位0
+                ws.cell(row=target_row, column=6).number_format = '0'
+                ws.cell(row=target_row, column=7).number_format = '0'
 
                 output = BytesIO()
                 wb.save(output)
