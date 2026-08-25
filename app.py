@@ -802,7 +802,8 @@ def run_feature_c():
 st.set_page_config(page_title="飞行数据工具组合", layout="wide")
 st.title("🛩️ 飞行数据工具组合")
 
-tab1, tab2, tab3 = st.tabs(["📋 每日飞行数据-10：00发", "📄 每日通航运行情况跟踪表-16：30发", "📊 生成每日运行跟踪表"])
+# 修改了第三个选项卡的名称
+tab1, tab2, tab3 = st.tabs(["📋 每日飞行数据-10：00发", "📄 每日通航运行情况跟踪表-16：30发", "📊 天成商务航空每日运行跟踪-16：30发"])
 
 with tab1:
     run_feature_a()
