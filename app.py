@@ -751,9 +751,23 @@ def run_feature_c():
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
                 ws.column_dimensions['M'].width = 50
 
-                # 4. F列（第6列）和G列（第7列）设置为数值格式，小数位0
-                ws.cell(row=target_row, column=6).number_format = '0'
-                ws.cell(row=target_row, column=7).number_format = '0'
+                # 4. F列和G列：复制上一行的数字格式（保持与模板一致），如果没有则设为'0'
+                prev_row = target_row - 1
+                if prev_row >= 1:
+                    # 尝试从上一行F列复制number_format
+                    src_f_num = ws.cell(prev_row, 6).number_format
+                    if src_f_num:
+                        ws.cell(target_row, 6).number_format = src_f_num
+                    else:
+                        ws.cell(target_row, 6).number_format = '0'
+                    src_g_num = ws.cell(prev_row, 7).number_format
+                    if src_g_num:
+                        ws.cell(target_row, 7).number_format = src_g_num
+                    else:
+                        ws.cell(target_row, 7).number_format = '0'
+                else:
+                    ws.cell(target_row, 6).number_format = '0'
+                    ws.cell(target_row, 7).number_format = '0'
 
                 output = BytesIO()
                 wb.save(output)
