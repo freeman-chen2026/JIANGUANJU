@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
-from openpyxl.styles import Font, Alignment, numbers
+from openpyxl.styles import Font, Alignment
 from datetime import datetime, timedelta
 import tempfile
 import os
@@ -106,16 +106,6 @@ def format_time(value):
         return value.strftime("%H:%M:%S")
     return str(value)
 
-def copy_cell_style(source_cell, target_cell):
-    """复制源单元格的样式到目标单元格"""
-    if source_cell.has_style:
-        target_cell.font = source_cell.font
-        target_cell.border = source_cell.border
-        target_cell.fill = source_cell.fill
-        target_cell.number_format = source_cell.number_format
-        target_cell.protection = source_cell.protection
-        target_cell.alignment = source_cell.alignment
-
 # ==============================
 # 功能 A：每日飞行数据自动更新（模板 J3、K3、L3、N3、O3）
 # ==============================
@@ -151,7 +141,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
             locations.add(dep)
         if arr:
             locations.add(arr)
-    location_list = sorted(locations)  # 排序保证顺序一致
+    location_list = sorted(locations)
     ws.cell(row=3, column=14).value = '、'.join(location_list)        # N3
 
     reg_series = valid_df[reg_col].dropna()
@@ -283,7 +273,7 @@ def parse_duration_to_minutes(duration_str):
         return None
     s = str(duration_str).strip()
     try:
-        minutes = parse_duration(s)  # 使用通用解析
+        minutes = parse_duration(s)
         return minutes
     except:
         return None
@@ -339,7 +329,7 @@ def run_feature_b():
     if "data_start_row" not in st.session_state:
         st.session_state.data_start_row = None
     if "group_rows" not in st.session_state:
-        st.session_state.group_rows = 4  # 固定每组4行
+        st.session_state.group_rows = 4
 
     # ---------- 模板管理 ----------
     st.subheader("📂 模板管理")
@@ -587,7 +577,8 @@ def run_feature_c():
 
     st.markdown("上传 **天成商务航空每日运行跟踪** 模板和 **航段数据导出**，自动在模板最下方新增一行今日汇总数据。")
 
-    template_file = st.file_uploader("📂 上传：天成商务航空每日运行跟踪模板", type=["xlsx"], key="c_template")
+    # 修改了此处标签文字
+    template_file = st.file_uploader("📂 上传：Operation-每日通航运行情况-天成商务航空每日运行跟踪", type=["xlsx"], key="c_template")
     data_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx"], key="c_data")
 
     if template_file and data_file:
@@ -706,7 +697,6 @@ def run_feature_c():
                     elif arr:
                         routes.append(arr)
                 route_str = "、".join(routes)
-                # 截断
                 if len(route_str) > 100:
                     route_str = route_str[:100] + "..."
 
@@ -727,7 +717,7 @@ def run_feature_c():
                 if target_row is None:
                     target_row = ws.max_row + 1
 
-                # 填值
+                # 填值（不做任何样式覆盖）
                 ws.cell(target_row, 1).value = supervision
                 ws.cell(target_row, 2).value = today_str
                 ws.cell(target_row, 3).value = category
@@ -741,14 +731,13 @@ def run_feature_c():
                 ws.cell(target_row, 11).value = actual_end
                 ws.cell(target_row, 12).value = model_str
                 ws.cell(target_row, 13).value = route_str
-                # N列放空格防止溢出
-                ws.cell(target_row, 14).value = " "
+                # N列留空
                 ws.cell(target_row, 15).value = yes
                 ws.cell(target_row, 16).value = yes
                 ws.cell(target_row, 17).value = yes
 
-                # ---------- 设置格式 ----------
-                # 1. 字体10号
+                # ---------- 设置格式（仅必要的，不影响F/G样式） ----------
+                # 1. 字体10号（所有新增单元格）
                 font10 = Font(size=10)
                 for col in range(1, 18):
                     ws.cell(row=target_row, column=col).font = font10
@@ -758,27 +747,12 @@ def run_feature_c():
                 for col in [2, 9, 10, 11]:
                     ws.cell(row=target_row, column=col).alignment = align_right
 
-                # 3. F 和 G 列：复制上一行的样式（如果存在），否则只设置右对齐
-                # 尝试从 target_row-1 行复制样式（如果该行存在且有数据）
-                prev_row = target_row - 1
-                if prev_row >= 1:
-                    # 检查该行F列是否有值（表示有数据行）
-                    if ws.cell(prev_row, 6).value is not None:
-                        # 复制F列样式
-                        copy_cell_style(ws.cell(prev_row, 6), ws.cell(target_row, 6))
-                        copy_cell_style(ws.cell(prev_row, 7), ws.cell(target_row, 7))
-                    else:
-                        # 否则只设右对齐
-                        ws.cell(target_row, 6).alignment = Alignment(horizontal='right', vertical='center')
-                        ws.cell(target_row, 7).alignment = Alignment(horizontal='right', vertical='center')
-                else:
-                    ws.cell(target_row, 6).alignment = Alignment(horizontal='right', vertical='center')
-                    ws.cell(target_row, 7).alignment = Alignment(horizontal='right', vertical='center')
-
-                # M列：不换行，不缩小，列宽50
+                # 3. M列：不换行，不缩小，列宽50
                 align_left_no_wrap = Alignment(horizontal='left', vertical='center', wrap_text=False, shrink_to_fit=False)
                 ws.cell(row=target_row, column=13).alignment = align_left_no_wrap
                 ws.column_dimensions['M'].width = 50
+
+                # 注意：F和G列不做任何样式设置，它们会自动继承模板原有格式
 
                 output = BytesIO()
                 wb.save(output)
@@ -793,7 +767,7 @@ def run_feature_c():
                 st.write(f"**开始时间：** {start_time}")
                 st.write(f"**计划结束：** {plan_end}")
                 st.write(f"**实际结束：** {actual_end if actual_end else '未结束'}")
-                st.write(f"**航线：** {route_str[:100]}{'...' if len(route_str)>100 else ''}")
+                st.write(f"**航线：** {route_str}")
 
                 # 固定下载文件名
                 st.download_button(
