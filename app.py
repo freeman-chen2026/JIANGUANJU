@@ -152,7 +152,7 @@ TAIWAN_CITIES = [
     "台北松山", "台北桃园", "高雄小港", "台中清泉岗", "花莲", "台东", "嘉义", "台南", "马公", "金门", "马祖"
 ]
 
-# ===== 修改点1：在 CITY_TO_PROVINCE 中补充缺失的新疆城市（伊犁等） =====
+# ===== 修改点：补充缺失的新疆城市（伊犁等） =====
 CITY_TO_PROVINCE = {
     # 直辖市
     "北京": "北京", "上海": "上海", "天津": "天津", "重庆": "重庆",
@@ -214,8 +214,8 @@ CITY_TO_PROVINCE = {
     "银川": "宁夏", "石嘴山": "宁夏", "吴忠": "宁夏", "固原": "宁夏", "中卫": "宁夏",
     # 新疆（补充伊犁等）
     "乌鲁木齐": "新疆", "克拉玛依": "新疆", "吐鲁番": "新疆", "哈密": "新疆",
-    "伊犁": "新疆",          # ===== 新增 =====
-    "伊犁伊宁": "新疆",      # ===== 新增（完整名称） =====
+    "伊犁": "新疆",
+    "伊犁伊宁": "新疆",
     # 西藏
     "拉萨": "西藏", "日喀则": "西藏", "昌都": "西藏", "林芝": "西藏", "山南": "西藏", "那曲": "西藏",
     # 内蒙古
@@ -255,8 +255,8 @@ DEFAULT_DETAIL_MAP = {
     "上海虹桥": {"province": "上海", "district": "闵行区"},
     "上海浦东": {"province": "上海", "district": "浦东新区"},
     "重庆江北": {"province": "重庆", "district": "江北区"},
-    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"},  # ===== 新增 =====
-    "伊犁伊宁": {"province": "新疆", "district": "伊犁"},          # ===== 新增 =====
+    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"},
+    "伊犁伊宁": {"province": "新疆", "district": "伊犁"},
 }
 
 def parse_flight_time(time_str):
@@ -268,9 +268,8 @@ def parse_flight_time(time_str):
     except:
         return 0, 0
 
-# ===== 修改点2：改进 extract_country，优先识别以“印尼”开头的城市 =====
+# ===== 修改点：改进 extract_country，优先识别以“印尼”开头的城市 =====
 def extract_country(city_name):
-    # 检查是否以“印尼”开头（可能后接无空格文字）
     if city_name.startswith("印尼"):
         return "印度尼西亚"
     parts = re.split(r'[\s\-]', city_name)
@@ -1155,24 +1154,21 @@ async function processNextDayRecord(record) {{
     if (insuranceSelect) await setSelectValue(insuranceSelect, "已参保");
     else console.warn('未找到保险情况下拉框');
 
+    // ========== 修改点：提交后等待用户手动点击确定 ==========
     const submitBtn = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[40]/ul/li[2]/input', 5000, true);
     if (submitBtn) {{
         submitBtn.click();
-        console.log('已提交，等待弹窗...');
-        let confirmBtn = null;
-        for (let attempt = 0; attempt < 8; attempt++) {{
-            confirmBtn = await waitForDialogConfirmButton(2000);
-            if (confirmBtn) break;
-            console.log(`等待确定按钮... 第${{attempt+1}}次尝试`);
-        }}
-        if (confirmBtn) {{
-            confirmBtn.click();
-            console.log('已点击确定按钮');
+        console.log('✅ 已点击“提交”按钮，弹窗已出现，请手动点击“确定”完成提交。');
+        console.log('⏳ 等待30秒，以便您手动操作...');
+        await sleep(30000); // 等待30秒
+        console.log('⏳ 继续执行下一个计划（假设您已手动提交完成）。');
+        // 可选检查返回列表页
+        const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
+        if (backBtn) {{
+            console.log('✅ 已返回列表页');
         }} else {{
-            console.warn('未找到确定按钮，请手动点击');
+            console.warn('⚠️ 未检测到返回列表页，继续下一个计划，请确保已手动提交。');
         }}
-        console.log('等待返回列表页...');
-        await waitForElement('input.query.yuanjiao', 15000, false);
         console.log(`处理完成：${{record.reg}}`);
     }} else {{
         console.warn('未找到提交按钮');
@@ -1201,7 +1197,8 @@ async function runNextDayPlans() {{
 # ==============================
 def run_feature_a():
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
-    excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
+    # 修改标签
+    excel2_file = st.file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
 
     if excel1_file and excel2_file:
         with st.spinner("正在自动处理..."):
@@ -1230,7 +1227,6 @@ def run_feature_a():
                     tmp1.write(excel1_file.getvalue())
                     excel1_path = tmp1.name
 
-                # 调用 update_excel1（定义在后面）
                 output_path, stats = update_excel1(
                     excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col
                 )
@@ -1449,7 +1445,8 @@ def run_feature_b():
             st.rerun()
 
     st.subheader("📊 数据上传")
-    data_file = st.file_uploader("上传：航段数据导出", type=["xlsx"], key="b_data_upload")
+    # 修改标签
+    data_file = st.file_uploader("上传：航段数据导出（当日B机）", type=["xlsx"], key="b_data_upload")
 
     if data_file and st.session_state.template_wb is not None:
         try:
@@ -1659,7 +1656,8 @@ def run_feature_c():
     st.markdown("上传 **天成商务航空每日运行跟踪** 模板和 **航段数据导出**，自动在模板最下方新增一行今日汇总数据。")
 
     template_file = st.file_uploader("📂 上传：Operation-每日通航运行情况-天成商务航空每日运行跟踪", type=["xlsx"], key="c_template")
-    data_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx"], key="c_data")
+    # 修改标签
+    data_file = st.file_uploader("📂 上传：航段数据导出（当日B机）", type=["xlsx"], key="c_data")
 
     if template_file and data_file:
         with st.spinner("正在处理..."):
