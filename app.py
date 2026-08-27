@@ -15,18 +15,10 @@ from collections import defaultdict
 # 通用工具函数（供各功能使用）
 # ==============================
 def parse_duration(dur_str) -> int:
-    """
-    将各种时间格式转换为总分钟数（整数），忽略秒。
-    支持格式：
-      - "HH:MM" 或 "HH:MM:SS"
-      - "X days, HH:MM" 或 "X days, HH:MM:SS"
-      - 纯数字（视为分钟）
-    """
     if pd.isna(dur_str):
         return 0
     s = str(dur_str).strip().replace('：', ':')
     s_lower = s.lower()
-
     days_pattern = re.compile(r'(\d+)\s*days?\s*,?\s*(\d+):(\d{2})(?::(\d{2}))?', re.IGNORECASE)
     match = days_pattern.search(s_lower)
     if match:
@@ -34,14 +26,12 @@ def parse_duration(dur_str) -> int:
         hours = int(match.group(2))
         minutes = int(match.group(3))
         return days * 24 * 60 + hours * 60 + minutes
-
     time_pattern = re.compile(r'(\d+):(\d{2})(?::(\d{2}))?')
     match = time_pattern.search(s)
     if match:
         hours = int(match.group(1))
         minutes = int(match.group(2))
         return hours * 60 + minutes
-
     try:
         return int(float(s))
     except:
@@ -162,6 +152,7 @@ TAIWAN_CITIES = [
     "台北松山", "台北桃园", "高雄小港", "台中清泉岗", "花莲", "台东", "嘉义", "台南", "马公", "金门", "马祖"
 ]
 
+# ===== 修改点1：在 CITY_TO_PROVINCE 中补充缺失的新疆城市（伊犁等） =====
 CITY_TO_PROVINCE = {
     # 直辖市
     "北京": "北京", "上海": "上海", "天津": "天津", "重庆": "重庆",
@@ -221,8 +212,10 @@ CITY_TO_PROVINCE = {
     "西宁": "青海", "海东": "青海",
     # 宁夏
     "银川": "宁夏", "石嘴山": "宁夏", "吴忠": "宁夏", "固原": "宁夏", "中卫": "宁夏",
-    # 新疆
+    # 新疆（补充伊犁等）
     "乌鲁木齐": "新疆", "克拉玛依": "新疆", "吐鲁番": "新疆", "哈密": "新疆",
+    "伊犁": "新疆",          # ===== 新增 =====
+    "伊犁伊宁": "新疆",      # ===== 新增（完整名称） =====
     # 西藏
     "拉萨": "西藏", "日喀则": "西藏", "昌都": "西藏", "林芝": "西藏", "山南": "西藏", "那曲": "西藏",
     # 内蒙古
@@ -262,6 +255,8 @@ DEFAULT_DETAIL_MAP = {
     "上海虹桥": {"province": "上海", "district": "闵行区"},
     "上海浦东": {"province": "上海", "district": "浦东新区"},
     "重庆江北": {"province": "重庆", "district": "江北区"},
+    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"},  # ===== 新增 =====
+    "伊犁伊宁": {"province": "新疆", "district": "伊犁"},          # ===== 新增 =====
 }
 
 def parse_flight_time(time_str):
@@ -273,7 +268,11 @@ def parse_flight_time(time_str):
     except:
         return 0, 0
 
+# ===== 修改点2：改进 extract_country，优先识别以“印尼”开头的城市 =====
 def extract_country(city_name):
+    # 检查是否以“印尼”开头（可能后接无空格文字）
+    if city_name.startswith("印尼"):
+        return "印度尼西亚"
     parts = re.split(r'[\s\-]', city_name)
     if parts:
         first_part = parts[0]
@@ -337,6 +336,10 @@ def build_city_mappings(df, custom_detail_map):
 
     return city_map, detail_map
 
+# ==============================
+# 脚本生成函数（完整版）
+# ==============================
+
 def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json):
     return f"""
 // ================= 公共辅助函数（基础脚本） =================
@@ -347,7 +350,6 @@ function sleep(ms) {{ return new Promise(r => setTimeout(r, ms)); }}
 
 // 自适应 getMainDoc：优先查找 #main iframe，如果找不到则直接返回顶层文档
 async function getMainDoc() {{
-    // 尝试通过 id 查找 iframe
     let iframe = document.querySelector('#main');
     if (iframe) {{
         let doc = iframe.contentDocument;
@@ -355,7 +357,6 @@ async function getMainDoc() {{
             return doc;
         }}
     }}
-    // 如果没有 iframe 或内容未加载，直接返回当前文档（适用于没有 iframe 的页面）
     console.log('未找到 iframe #main，使用顶层文档');
     return document;
 }}
@@ -1199,7 +1200,6 @@ async function runNextDayPlans() {{
 # 功能 A：每日飞行数据自动更新
 # ==============================
 def run_feature_a():
-    # 原代码保持不变
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出", type=["xlsx", "xlsm"], key="a_excel2")
 
@@ -1230,6 +1230,7 @@ def run_feature_a():
                     tmp1.write(excel1_file.getvalue())
                     excel1_path = tmp1.name
 
+                # 调用 update_excel1（定义在后面）
                 output_path, stats = update_excel1(
                     excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col
                 )
@@ -1280,13 +1281,13 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
     for val in valid_df[flight_col]:
         total_minutes += parse_duration(val)
 
-    ws.cell(row=3, column=10).value = format_duration(total_minutes)  # J3
-    ws.cell(row=3, column=11).value = len(valid_df)                  # K3
+    ws.cell(row=3, column=10).value = format_duration(total_minutes)
+    ws.cell(row=3, column=11).value = len(valid_df)
 
     old_l3 = ws.cell(row=3, column=12).value
     old_minutes = parse_duration(old_l3) if old_l3 is not None else 0
     new_total = old_minutes + total_minutes
-    ws.cell(row=3, column=12).value = format_duration(new_total)     # L3
+    ws.cell(row=3, column=12).value = format_duration(new_total)
 
     locations = set()
     for _, row in valid_df.iterrows():
@@ -1297,10 +1298,10 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
         if arr:
             locations.add(arr)
     location_list = sorted(locations)
-    ws.cell(row=3, column=14).value = '、'.join(location_list)        # N3
+    ws.cell(row=3, column=14).value = '、'.join(location_list)
 
     reg_series = valid_df[reg_col].dropna()
-    ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())  # O3
+    ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())
 
     stats = {
         '昨日飞行时间': format_duration(total_minutes),
@@ -1317,7 +1318,6 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col)
 # ==============================
 # 功能 B：模板生成备案表
 # ==============================
-# ---------- 注册号 -> ICAO 机型映射 ----------
 DEFAULT_ICAO_MAP = {
     "B65AP": "GLF4",
     "B652R": "GLF4",
@@ -1381,7 +1381,6 @@ def combine_date_time(date_val, time_val):
         return None
 
 def run_feature_b():
-    # 原代码不变
     st.sidebar.header("✏️ 自定义固定填入值（A、B列）")
     default_supervision = st.sidebar.text_input("所属监管局（A列）", value="深圳局", key="b_supervision")
     default_operator = st.sidebar.text_input("运行人标准名称（B列）", value="天成商务航空有限公司", key="b_operator")
@@ -1864,7 +1863,7 @@ def run_feature_c():
                 st.exception(e)
 
 # ==============================
-# 功能 D：通航脚本生成器（完整版）
+# 功能 D：通航脚本生成器（完整版，已修复）
 # ==============================
 def run_feature_d():
     st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案次日计划**。")
@@ -1980,7 +1979,6 @@ def run_feature_d():
 # 功能 E：值班连班统计
 # ==============================
 def run_feature_e():
-    # 原代码保持不变
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
 
     uploaded_file = st.file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
