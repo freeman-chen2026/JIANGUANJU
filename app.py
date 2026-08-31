@@ -1948,27 +1948,16 @@ def run_feature_e():
 
     uploaded_file = st.file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
 
-    default_control_staff = "陈宇鸣 周贤民 吴迪 王浩宇 林泓辰 陈育盛 钟洪达"
-    control_staff_input = st.text_input("运行控制/计划人员名单（空格分隔）", value=default_control_staff, key="e_control")
-    management_staff_input = st.text_input("运行管理人员名单（空格分隔）", value="周贤民 陈宇鸣 王浩宇 翟一帆 鲁翔伟 张光超", key="e_management")
-
-    exception_text = st.text_area(
-        "例外（运行管理人员当天不是连班）",
-        placeholder="每行一个：日期 姓名，例如：\n6月1日 周贤民\n6月5日 陈宇鸣",
-        key="e_exception"
+    # 只保留“值班人员名单”一个输入框
+    control_staff_input = st.text_input(
+        "值班人员名单（空格分隔）",
+        value="陈宇鸣 周贤民 吴迪 王浩宇 林泓辰 陈育盛 钟洪达",
+        key="e_control"
     )
 
     if uploaded_file:
         control_staff = set(control_staff_input.strip().split())
-        management_staff = set(management_staff_input.strip().split())
-        target_staff = control_staff  # 只统计这7人
-
-        exceptions = set()
-        if exception_text:
-            for line in exception_text.strip().split("\n"):
-                parts = line.strip().split()
-                if len(parts) >= 2:
-                    exceptions.add((parts[0], parts[1]))
+        target_staff = control_staff  # 只统计这些人
 
         schedules = []
         file_type = uploaded_file.type
@@ -2052,7 +2041,7 @@ def run_feature_e():
                 st.stop()
 
         else:
-            # PDF解析（恢复原始逻辑，只过滤姓名）
+            # PDF解析
             with pdfplumber.open(uploaded_file) as pdf:
                 all_text = ""
                 for page in pdf.pages:
@@ -2171,10 +2160,9 @@ def run_feature_e():
 
         result_df = pd.DataFrame(result_data).sort_values(by="运管主班", ascending=False)
 
-        # 只显示值班人员列表
+        # 只显示值班人员表格
         st.subheader("📌 值班人员")
-        control_df = result_df[result_df["姓名"].isin(control_staff)]
-        st.dataframe(control_df, use_container_width=True, height=400)
+        st.dataframe(result_df, use_container_width=True, height=400)
 
         csv = result_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
