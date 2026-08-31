@@ -1974,7 +1974,7 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 # ==============================
-# 功能 E：值班连班统计（已修复）
+# 功能 E：值班连班统计（已修复 + 调试输出）
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
@@ -2049,6 +2049,10 @@ def run_feature_e():
                 second_cell = str(row[1]) if pd.notna(row[1]) else ""
                 second_cell = second_cell.strip()
 
+                # 过滤掉包含“备注”、“更新”等非排班行
+                if "备注" in second_cell or "更新" in second_cell:
+                    continue
+
                 if "白" in second_cell:
                     first_cell = str(row[0]) if pd.notna(row[0]) else ""
                     date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
@@ -2073,7 +2077,8 @@ def run_feature_e():
                                 day_people.add(day_name)
                             if night_name and night_name not in ["nan", "None", ""]:
                                 night_people.add(night_name)
-                        schedules.append({"date": current_date, "day": day_people, "night": night_people})
+                        if current_date and not any(kw in current_date for kw in ["备注", "更新"]):
+                            schedules.append({"date": current_date, "day": day_people, "night": night_people})
                         day_row = None
                         current_date = None
 
@@ -2095,19 +2100,21 @@ def run_feature_e():
                 line = line.strip()
                 if not line:
                     continue
+                if "备注" in line or "更新" in line:
+                    continue
                 if "白" in line and "晚" not in line:
                     date_match = re.search(r"(\d+月\d+日|\d+日)", line)
                     date_str = date_match.group(1) if date_match else ""
                     names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
                     filtered_names = [n for n in names if n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
-                    if filtered_names:
+                    if filtered_names and date_str:
                         day_shifts.append((date_str, filtered_names))
                 elif "晚" in line:
                     date_match = re.search(r"(\d+月\d+日|\d+日)", line)
                     date_str = date_match.group(1) if date_match else ""
                     names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
                     filtered_names = [n for n in names if n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
-                    if filtered_names:
+                    if filtered_names and date_str:
                         night_shifts.append((date_str, filtered_names))
 
             min_len = min(len(day_shifts), len(night_shifts))
@@ -2115,11 +2122,12 @@ def run_feature_e():
                 date_day, day_names = day_shifts[i]
                 date_night, night_names = night_shifts[i]
                 date_str = date_day if date_day else date_night
-                schedules.append({
-                    "date": date_str,
-                    "day": set(day_names),
-                    "night": set(night_names)
-                })
+                if date_str and not any(kw in date_str for kw in ["备注", "更新"]):
+                    schedules.append({
+                        "date": date_str,
+                        "day": set(day_names),
+                        "night": set(night_names)
+                    })
 
             if not schedules:
                 st.error("未识别到任何排班数据，请检查文件格式")
@@ -2127,20 +2135,28 @@ def run_feature_e():
 
         st.success(f"成功识别 {len(schedules)} 天的排班数据")
 
-        # ===== 修改：日期排序（确保连续判断按时间顺序） =====
+        # ===== 日期排序 =====
         import re as _re
         def parse_date_to_tuple(date_str):
-            """将日期字符串（如'9月1日'或'1日'）转换为(month, day)元组，默认月份为9"""
             match = _re.search(r'(\d+)月(\d+)日', date_str)
             if match:
                 return (int(match.group(1)), int(match.group(2)))
             match = _re.search(r'(\d+)日', date_str)
             if match:
                 return (9, int(match.group(1)))  # 默认9月
-            return (9, 99)  # 无法解析排最后
+            return (9, 99)
 
         schedules.sort(key=lambda x: parse_date_to_tuple(x['date']))
-        # ==================================================
+        # =====================
+
+        # ===== 显示完整的识别结果（调试信息） =====
+        with st.expander("🔍 完整排班数据（请核对）"):
+            st.write(f"**总天数：{len(schedules)} 天**")
+            for idx, sch in enumerate(schedules):
+                st.write(f"**{sch['date']}**")
+                st.write(f"  - 白班：{', '.join(sorted(sch['day'])) if sch['day'] else '（无）'}")
+                st.write(f"  - 夜班：{', '.join(sorted(sch['night'])) if sch['night'] else '（无）'}")
+        # ========================================
 
         all_persons = control_staff.union(management_staff)
         stats = {name: {"consecutive": 0, "pure_day": 0, "pure_night": 0, "total_night": 0, "rest_days": 0} for name in all_persons}
@@ -2209,10 +2225,6 @@ def run_feature_e():
 
         csv = result_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
-
-        with st.expander("🔍 调试信息"):
-            st.write("总天数：", len(schedules))
-            st.write("前3天示例：", schedules[:3])
 
 # ==============================
 # 主界面
