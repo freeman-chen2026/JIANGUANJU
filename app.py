@@ -1974,7 +1974,7 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 # ==============================
-# 功能 E：值班连班统计
+# 功能 E：值班连班统计（已修复）
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
@@ -2126,6 +2126,21 @@ def run_feature_e():
                 st.stop()
 
         st.success(f"成功识别 {len(schedules)} 天的排班数据")
+
+        # ===== 修改：日期排序（确保连续判断按时间顺序） =====
+        import re as _re
+        def parse_date_to_tuple(date_str):
+            """将日期字符串（如'9月1日'或'1日'）转换为(month, day)元组，默认月份为9"""
+            match = _re.search(r'(\d+)月(\d+)日', date_str)
+            if match:
+                return (int(match.group(1)), int(match.group(2)))
+            match = _re.search(r'(\d+)日', date_str)
+            if match:
+                return (9, int(match.group(1)))  # 默认9月
+            return (9, 99)  # 无法解析排最后
+
+        schedules.sort(key=lambda x: parse_date_to_tuple(x['date']))
+        # ==================================================
 
         all_persons = control_staff.union(management_staff)
         stats = {name: {"consecutive": 0, "pure_day": 0, "pure_night": 0, "total_night": 0, "rest_days": 0} for name in all_persons}
