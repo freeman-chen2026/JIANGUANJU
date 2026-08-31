@@ -1828,7 +1828,7 @@ def run_feature_c():
                 st.exception(e)
 
 # ==============================
-# 功能 D：通航脚本生成器
+# 功能 D：通航脚本生成器（完整版，已修复）
 # ==============================
 def run_feature_d():
     st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案次日计划**。")
@@ -1941,14 +1941,16 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 # ==============================
-# 功能 E：值班连班统计（完全重写，确保白夜班正确）
+# 功能 E：值班连班统计（只统计指定的7人，过滤备注）
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
 
     uploaded_file = st.file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
 
-    default_control_staff = "陈宇鸣 周贤民 吴迪 王浩宇 林泓辰 陈育盛 钟洪达"
+    # 指定的7人名单（运行控制/计划人员）
+    target_staff = ["陈宇鸣", "周贤民", "吴迪", "王浩宇", "林泓辰", "陈育盛", "钟洪达"]
+    default_control_staff = " ".join(target_staff)
     control_staff_input = st.text_input("运行控制/计划人员名单（空格分隔）", value=default_control_staff, key="e_control")
     management_staff_input = st.text_input("运行管理人员名单（空格分隔）", value="周贤民 陈宇鸣 王浩宇 翟一帆 鲁翔伟 张光超", key="e_management")
 
@@ -1959,9 +1961,13 @@ def run_feature_e():
     )
 
     if uploaded_file:
+        # 只取 control_staff 中的人员（即输入的名单）
         control_staff = set(control_staff_input.strip().split())
-        management_staff = set(management_staff_input.strip().split())
-        all_persons = control_staff.union(management_staff)
+        # 只保留在 target_staff 中的人
+        target_staff = control_staff.intersection(set(target_staff))
+        if not target_staff:
+            st.error("未指定有效的人员名单，请确保输入的人员在默认名单中。")
+            return
 
         exceptions = set()
         if exception_text:
@@ -1974,6 +1980,7 @@ def run_feature_e():
         file_type = uploaded_file.type
 
         if file_type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+            # Excel 解析（保持不变）
             try:
                 df = pd.read_excel(uploaded_file, header=None, engine='openpyxl')
             except Exception as e:
@@ -2017,6 +2024,10 @@ def run_feature_e():
                 second_cell = str(row[1]) if pd.notna(row[1]) else ""
                 second_cell = second_cell.strip()
 
+                # 跳过非排班行（包含备注等）
+                if any(kw in second_cell for kw in ["备注", "更新", "工作", "时间"]):
+                    continue
+
                 if "白" in second_cell:
                     first_cell = str(row[0]) if pd.notna(row[0]) else ""
                     date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
@@ -2037,9 +2048,9 @@ def run_feature_e():
                         for col_idx, role in col_mapping.items():
                             day_name = str(day_row[col_idx]).strip() if pd.notna(day_row[col_idx]) else ""
                             night_name = str(row[col_idx]).strip() if pd.notna(row[col_idx]) else ""
-                            if day_name and day_name not in ["nan", "None", ""]:
+                            if day_name and day_name not in ["nan", "None", ""] and day_name in target_staff:
                                 day_people.add(day_name)
-                            if night_name and night_name not in ["nan", "None", ""]:
+                            if night_name and night_name not in ["nan", "None", ""] and night_name in target_staff:
                                 night_people.add(night_name)
                         schedules.append({"date": current_date, "day": day_people, "night": night_people})
                         day_row = None
@@ -2050,74 +2061,82 @@ def run_feature_e():
                 st.stop()
 
         else:
-            # ================== 新的PDF解析逻辑 ==================
+            # ===== PDF 解析（只过滤目标人员，跳过备注行） =====
             with pdfplumber.open(uploaded_file) as pdf:
                 all_text = ""
                 for page in pdf.pages:
-                    text = page.extract_text()
-                    if text:
-                        all_text += text + "\n"
+                    all_text += page.extract_text() + "\n"
 
-            lines = all_text.splitlines()
-            # 合并所有行，便于正则匹配
-            full_text = " ".join(lines)
+            lines = all_text.split("\n")
+            day_shifts = []
+            night_shifts = []
 
-            # 查找所有 "数字日白" 和 "数字日晚" 模式
-            pattern = re.compile(r'(\d+)\s*日\s*(白|晚)')
-            matches = list(pattern.finditer(full_text))
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                # 跳过备注、工作、时间等干扰行
+                if any(kw in line for kw in ["备注", "更新", "工作", "时间", "调整", "参与", "席位", "安排", "次日"]):
+                    continue
+                # 提取日期
+                date_match = re.search(r"(\d+月\d+日|\d+日)", line)
+                if not date_match:
+                    continue
+                date_str = date_match.group(1)
 
-            if not matches:
-                st.error("未找到任何日期标记（如'1日白'），请检查PDF格式。")
-                st.stop()
-
-            # 按匹配位置提取每个班次后面的人员姓名
-            name_pattern = re.compile(r'[\u4e00-\u9fa5]{2,4}')
-            exclude_keywords = {"运行", "控制", "带班", "主任", "计划", "监控", "保障", "支援", "管理", "工作", "时间", "调整", 
-                                "参与", "席位", "安排", "次日", "白班", "夜班", "星期一", "星期二", "星期三", "星期四", "星期五", 
-                                "星期六", "星期日", "小时", "邮件", "表格", "附件", "酒店", "航后", "经理", "报告", "记录", 
-                                "请假", "加班", "出差", "休假", "制度", "流程", "交接", "签到", "补休", "轮休"}
-
-            for i, match in enumerate(matches):
-                day_num = int(match.group(1))
-                shift = match.group(2)  # "白" 或 "晚"
-                start_pos = match.end()
-                end_pos = matches[i+1].start() if i+1 < len(matches) else len(full_text)
-                segment = full_text[start_pos:end_pos]
-                # 提取所有中文姓名
-                names = name_pattern.findall(segment)
-                # 过滤掉干扰词和不在人员名单中的
-                filtered = [n for n in names if n not in exclude_keywords and n in all_persons]
-                if not filtered:
+                # 提取姓名并只保留 target_staff 中的
+                names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
+                filtered_names = [n for n in names if n in target_staff]
+                if not filtered_names:
                     continue
 
-                date_str = f"9月{day_num}日"
-                existing = next((s for s in schedules if s["date"] == date_str), None)
-                if existing is None:
-                    existing = {"date": date_str, "day": set(), "night": set()}
-                    schedules.append(existing)
+                # 判断白班或夜班
+                if "白" in line and "晚" not in line:
+                    day_shifts.append((date_str, filtered_names))
+                elif "晚" in line:
+                    night_shifts.append((date_str, filtered_names))
 
-                if shift == "白":
-                    existing["day"].update(filtered)
-                else:
-                    existing["night"].update(filtered)
+            # 配对白班和夜班（按顺序）
+            min_len = min(len(day_shifts), len(night_shifts))
+            for i in range(min_len):
+                date_day, day_names = day_shifts[i]
+                date_night, night_names = night_shifts[i]
+                date_str = date_day if date_day else date_night
+                schedules.append({
+                    "date": date_str,
+                    "day": set(day_names),
+                    "night": set(night_names)
+                })
 
-            # 如果有些日期只有白班或夜班，可能漏掉，但我们已经合并。
-
-            # 按日期排序
-            schedules.sort(key=lambda x: int(re.search(r'(\d+)日', x['date']).group(1)))
+            if not schedules:
+                st.error("未识别到任何排班数据，请检查文件格式")
+                st.stop()
 
         st.success(f"成功识别 {len(schedules)} 天的排班数据")
 
-        # ===== 调试输出 =====
+        # ===== 日期排序 =====
+        import re as _re
+        def parse_date_to_tuple(date_str):
+            match = _re.search(r'(\d+)月(\d+)日', date_str)
+            if match:
+                return (int(match.group(1)), int(match.group(2)))
+            match = _re.search(r'(\d+)日', date_str)
+            if match:
+                return (9, int(match.group(1)))  # 默认9月
+            return (9, 99)
+
+        schedules.sort(key=lambda x: parse_date_to_tuple(x['date']))
+
+        # ===== 显示完整的识别结果（调试信息） =====
         with st.expander("🔍 完整排班数据（请核对）"):
             st.write(f"**总天数：{len(schedules)} 天**")
-            for sch in schedules:
+            for idx, sch in enumerate(schedules):
                 st.write(f"**{sch['date']}**")
                 st.write(f"  - 白班：{', '.join(sorted(sch['day'])) if sch['day'] else '（无）'}")
                 st.write(f"  - 夜班：{', '.join(sorted(sch['night'])) if sch['night'] else '（无）'}")
 
-        # ===== 统计逻辑 =====
-        all_persons = control_staff.union(management_staff)
+        # ===== 统计逻辑（只针对 target_staff） =====
+        all_persons = target_staff
         stats = {name: {"consecutive": 0, "pure_day": 0, "pure_night": 0, "total_night": 0, "rest_days": 0} for name in all_persons}
         attendance_records = {name: [] for name in all_persons}
 
@@ -2132,11 +2151,8 @@ def run_feature_e():
                 attendance_records[name].append(in_day or in_night)
 
                 if in_day and in_night:
-                    if name in management_staff:
-                        if (date_str, name) not in exceptions:
-                            stats[name]["consecutive"] += 1
-                    else:
-                        stats[name]["consecutive"] += 1
+                    # 连班（白+夜）计入运管主班
+                    stats[name]["consecutive"] += 1
                 elif in_day and not in_night:
                     stats[name]["pure_day"] += 1
                 elif not in_day and in_night:
@@ -2172,15 +2188,15 @@ def run_feature_e():
 
         result_df = pd.DataFrame(result_data).sort_values(by="运管主班", ascending=False)
 
+        # 只显示控制人员
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("📌 运行控制/计划人员")
             control_df = result_df[result_df["姓名"].isin(control_staff)]
             st.dataframe(control_df, use_container_width=True, height=400)
         with col2:
-            st.subheader("⚙️ 运行管理人员")
-            management_df = result_df[result_df["姓名"].isin(management_staff)]
-            st.dataframe(management_df, use_container_width=True, height=400)
+            st.subheader("⚙️ 运行管理人员（本功能已忽略）")
+            st.info("管理人员不参与统计")
 
         csv = result_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
