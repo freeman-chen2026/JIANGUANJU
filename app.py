@@ -2171,14 +2171,10 @@ def run_feature_e():
 
         result_df = pd.DataFrame(result_data).sort_values(by="运管主班", ascending=False)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.subheader("📌 运行控制/计划人员")
-            control_df = result_df[result_df["姓名"].isin(control_staff)]
-            st.dataframe(control_df, use_container_width=True, height=400)
-        with col2:
-            st.subheader("⚙️ 运行管理人员（本功能已忽略）")
-            st.info("管理人员不参与统计")
+        # 只显示值班人员列表
+        st.subheader("📌 值班人员")
+        control_df = result_df[result_df["姓名"].isin(control_staff)]
+        st.dataframe(control_df, use_container_width=True, height=400)
 
         csv = result_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
