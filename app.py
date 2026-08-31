@@ -2147,20 +2147,38 @@ def run_feature_e():
                 rest += (cnt - 1)
             stats[name]["rest_days"] = rest
 
+        # 生成结果并计算累计在岗时间
         result_data = []
         for name in all_persons:
+            # 计算累计分钟数
+            consecutive = stats[name]["consecutive"]  # 运管主班
+            pure_day = stats[name]["pure_day"]        # 运控白班
+            pure_night = stats[name]["pure_night"]    # 运控夜班
+
+            # 各岗位单次时长（分钟）
+            main_shift_min = 15 * 60 + 30   # 15:30
+            day_shift_min = 8 * 60 + 30     # 08:30
+            night_shift_min = 15 * 60 + 30  # 15:30
+
+            total_minutes = consecutive * main_shift_min + pure_day * day_shift_min + pure_night * night_shift_min
+            # 格式化为 HH:MM
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            total_time_str = f"{hours}:{minutes:02d}"
+
             result_data.append({
                 "姓名": name,
-                "运管主班": stats[name]["consecutive"],
-                "运控白班": stats[name]["pure_day"],
-                "运控夜班": stats[name]["pure_night"],
+                "运管主班": consecutive,
+                "运控白班": pure_day,
+                "运控夜班": pure_night,
                 "补贴天数": stats[name]["total_night"],
-                "休息天数": stats[name]["rest_days"]
+                "休息天数": stats[name]["rest_days"],
+                "累计在岗时间": total_time_str
             })
 
         result_df = pd.DataFrame(result_data).sort_values(by="运管主班", ascending=False)
 
-        # 只显示值班人员表格
+        # 显示表格
         st.subheader("📌 值班人员")
         st.dataframe(result_df, use_container_width=True, height=400)
 
