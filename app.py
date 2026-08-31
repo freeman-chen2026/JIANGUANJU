@@ -1941,7 +1941,7 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 # ==============================
-# 功能 E：值班连班统计（已修复，无过滤条件，仅排序和调试输出）
+# 功能 E：值班连班统计（已修复：过滤干扰行，确保30天，休息天数正确）
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
@@ -2016,8 +2016,15 @@ def run_feature_e():
                 second_cell = str(row[1]) if pd.notna(row[1]) else ""
                 second_cell = second_cell.strip()
 
+                # 过滤掉非排班行（如备注行）
+                if "备注" in second_cell or "更新" in second_cell or "时间" in second_cell:
+                    continue
+
                 if "白" in second_cell:
                     first_cell = str(row[0]) if pd.notna(row[0]) else ""
+                    # 只提取包含“日”的日期
+                    if "日" not in first_cell:
+                        continue
                     date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
                     if date_match:
                         current_date = date_match.group(1)
@@ -2027,6 +2034,9 @@ def run_feature_e():
                 elif "晚" in second_cell and day_row is not None:
                     if current_date is None:
                         first_cell = str(row[0]) if pd.notna(row[0]) else ""
+                        if "日" not in first_cell:
+                            day_row = None
+                            continue
                         date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
                         if date_match:
                             current_date = date_match.group(1)
@@ -2040,7 +2050,9 @@ def run_feature_e():
                                 day_people.add(day_name)
                             if night_name and night_name not in ["nan", "None", ""]:
                                 night_people.add(night_name)
-                        schedules.append({"date": current_date, "day": day_people, "night": night_people})
+                        # 仅当日期有效且白班或夜班非空时添加
+                        if current_date and (day_people or night_people):
+                            schedules.append({"date": current_date, "day": day_people, "night": night_people})
                         day_row = None
                         current_date = None
 
@@ -2062,19 +2074,26 @@ def run_feature_e():
                 line = line.strip()
                 if not line:
                     continue
+                # 过滤非排班行
+                if "备注" in line or "更新" in line or "时间" in line:
+                    continue
                 if "白" in line and "晚" not in line:
                     date_match = re.search(r"(\d+月\d+日|\d+日)", line)
-                    date_str = date_match.group(1) if date_match else ""
+                    if not date_match:
+                        continue
+                    date_str = date_match.group(1)
                     names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
                     filtered_names = [n for n in names if n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
-                    if filtered_names:
+                    if filtered_names and date_str:
                         day_shifts.append((date_str, filtered_names))
                 elif "晚" in line:
                     date_match = re.search(r"(\d+月\d+日|\d+日)", line)
-                    date_str = date_match.group(1) if date_match else ""
+                    if not date_match:
+                        continue
+                    date_str = date_match.group(1)
                     names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
                     filtered_names = [n for n in names if n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
-                    if filtered_names:
+                    if filtered_names and date_str:
                         night_shifts.append((date_str, filtered_names))
 
             min_len = min(len(day_shifts), len(night_shifts))
@@ -2082,11 +2101,12 @@ def run_feature_e():
                 date_day, day_names = day_shifts[i]
                 date_night, night_names = night_shifts[i]
                 date_str = date_day if date_day else date_night
-                schedules.append({
-                    "date": date_str,
-                    "day": set(day_names),
-                    "night": set(night_names)
-                })
+                if date_str and (day_names or night_names):
+                    schedules.append({
+                        "date": date_str,
+                        "day": set(day_names),
+                        "night": set(night_names)
+                    })
 
             if not schedules:
                 st.error("未识别到任何排班数据，请检查文件格式")
