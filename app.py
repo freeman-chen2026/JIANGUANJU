@@ -1941,7 +1941,7 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 # ==============================
-# 功能 E：值班连班统计（完全重写PDF解析，只统计指定人员）
+# 功能 E：值班连班统计（完全重写，确保白夜班正确）
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
@@ -2050,7 +2050,7 @@ def run_feature_e():
                 st.stop()
 
         else:
-            # ================== 新的PDF解析逻辑（按行扫描，只保留指定人员） ==================
+            # ================== 新的PDF解析逻辑 ==================
             with pdfplumber.open(uploaded_file) as pdf:
                 all_text = ""
                 for page in pdf.pages:
@@ -2059,48 +2059,38 @@ def run_feature_e():
                         all_text += text + "\n"
 
             lines = all_text.splitlines()
-            date_pattern = re.compile(r'(\d+)日')
+            # 合并所有行，便于正则匹配
+            full_text = " ".join(lines)
+
+            # 查找所有 "数字日白" 和 "数字日晚" 模式
+            pattern = re.compile(r'(\d+)\s*日\s*(白|晚)')
+            matches = list(pattern.finditer(full_text))
+
+            if not matches:
+                st.error("未找到任何日期标记（如'1日白'），请检查PDF格式。")
+                st.stop()
+
+            # 按匹配位置提取每个班次后面的人员姓名
             name_pattern = re.compile(r'[\u4e00-\u9fa5]{2,4}')
+            exclude_keywords = {"运行", "控制", "带班", "主任", "计划", "监控", "保障", "支援", "管理", "工作", "时间", "调整", 
+                                "参与", "席位", "安排", "次日", "白班", "夜班", "星期一", "星期二", "星期三", "星期四", "星期五", 
+                                "星期六", "星期日", "小时", "邮件", "表格", "附件", "酒店", "航后", "经理", "报告", "记录", 
+                                "请假", "加班", "出差", "休假", "制度", "流程", "交接", "签到", "补休", "轮休"}
 
-            # 干扰词列表，用于跳过非排班行
-            exclude_keywords = ["备注", "更新", "工作", "时间", "调整", "参与", "席位", "安排", "次日", "白班", "夜班",
-                                "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "小时", "邮件",
-                                "表格", "附件", "酒店", "航后", "带班", "经理", "报告", "记录", "请假", "加班", "出差",
-                                "休假", "制度", "流程", "交接", "签到", "补休", "轮休"]
-
-            for line in lines:
-                line = line.strip()
-                if not line:
-                    continue
-
-                # 跳过包含干扰词的行
-                if any(kw in line for kw in exclude_keywords):
-                    continue
-
-                # 找日期
-                date_match = date_pattern.search(line)
-                if not date_match:
-                    continue
-                day_num = int(date_match.group(1))
-                if day_num < 1 or day_num > 31:
-                    continue
-                date_str = f"9月{day_num}日"
-
-                # 判断班次
-                if "白" in line:
-                    shift = "白"
-                elif "晚" in line:
-                    shift = "晚"
-                else:
-                    continue
-
-                # 提取该行中所有中文姓名，只保留在 all_persons 中的
-                names = name_pattern.findall(line)
-                filtered = [n for n in names if n in all_persons]
+            for i, match in enumerate(matches):
+                day_num = int(match.group(1))
+                shift = match.group(2)  # "白" 或 "晚"
+                start_pos = match.end()
+                end_pos = matches[i+1].start() if i+1 < len(matches) else len(full_text)
+                segment = full_text[start_pos:end_pos]
+                # 提取所有中文姓名
+                names = name_pattern.findall(segment)
+                # 过滤掉干扰词和不在人员名单中的
+                filtered = [n for n in names if n not in exclude_keywords and n in all_persons]
                 if not filtered:
                     continue
 
-                # 查找或创建该日期的记录
+                date_str = f"9月{day_num}日"
                 existing = next((s for s in schedules if s["date"] == date_str), None)
                 if existing is None:
                     existing = {"date": date_str, "day": set(), "night": set()}
@@ -2111,35 +2101,7 @@ def run_feature_e():
                 else:
                     existing["night"].update(filtered)
 
-            # 如果按行解析结果不足25天，尝试用更宽松的全文正则作为补充
-            if len(schedules) < 25:
-                full_text = " ".join(lines)
-                pattern = re.compile(r'(\d+)\s*日\s*(白|晚)')
-                matches = pattern.findall(full_text)
-                if matches:
-                    pos_list = []
-                    for match in pattern.finditer(full_text):
-                        day_num = int(match.group(1))
-                        shift = match.group(2)
-                        pos = match.end()
-                        pos_list.append((pos, day_num, shift))
-                    pos_list.sort(key=lambda x: x[0])
-                    for idx, (pos, day_num, shift) in enumerate(pos_list):
-                        end_pos = pos_list[idx+1][0] if idx+1 < len(pos_list) else len(full_text)
-                        segment = full_text[pos:end_pos]
-                        names = name_pattern.findall(segment)
-                        filtered = [n for n in names if n in all_persons]
-                        if not filtered:
-                            continue
-                        date_str = f"9月{day_num}日"
-                        existing = next((s for s in schedules if s["date"] == date_str), None)
-                        if existing is None:
-                            existing = {"date": date_str, "day": set(), "night": set()}
-                            schedules.append(existing)
-                        if shift == "白":
-                            existing["day"].update(filtered)
-                        else:
-                            existing["night"].update(filtered)
+            # 如果有些日期只有白班或夜班，可能漏掉，但我们已经合并。
 
             # 按日期排序
             schedules.sort(key=lambda x: int(re.search(r'(\d+)日', x['date']).group(1)))
