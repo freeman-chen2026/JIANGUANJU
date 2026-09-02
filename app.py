@@ -97,7 +97,7 @@ def format_time(value):
     return str(value)
 
 # ==============================
-# 功能 A：每日飞行数据自动更新（含M3调机飞行/公务飞行逻辑）
+# 功能 A：每日飞行数据自动更新
 # ==============================
 def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col):
     wb = load_workbook(excel1_path)
@@ -228,7 +228,7 @@ def run_feature_a():
                     os.unlink(output_path)
 
 # ==============================
-# 功能 B：模板生成备案表（已去除侧边栏，使用固定默认值）
+# 功能 B：模板生成备案表
 # ==============================
 DEFAULT_ICAO_MAP = {
     "B65AP": "GLF4",
@@ -293,7 +293,6 @@ def combine_date_time(date_val, time_val):
         return None
 
 def run_feature_b():
-    # 固定默认值，不再显示侧边栏
     default_supervision = "深圳局"
     default_operator = "天成商务航空有限公司"
     icao_map = DEFAULT_ICAO_MAP.copy()
@@ -530,7 +529,7 @@ def run_feature_b():
             st.info("👆 请上传航段数据 Excel 文件。")
 
 # ==============================
-# 功能 C：生成每日运行跟踪表（原代码，完全未变）
+# 功能 C：生成每日运行跟踪表
 # ==============================
 def run_feature_c():
     ICAO_MAP = {
@@ -753,7 +752,7 @@ def run_feature_c():
                 st.exception(e)
 
 # ==============================
-# 功能 D：通航脚本生成器（完整版，已恢复所有脚本生成函数）
+# 功能 D：通航脚本生成器（完整版，包含所有脚本生成函数）
 # ==============================
 # ---------- 以下为脚本生成所需的全局常量和辅助函数 ----------
 COUNTRIES = [
@@ -962,6 +961,7 @@ def build_city_mappings(df, custom_detail_map):
 
     return city_map, detail_map
 
+# ---------- 以下三个函数为脚本生成核心，完整包含 ----------
 def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json):
     return f"""
 // ================= 公共辅助函数（基础脚本） =================
@@ -970,7 +970,6 @@ def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
 
 function sleep(ms) {{ return new Promise(r => setTimeout(r, ms)); }}
 
-// 自适应 getMainDoc：优先查找 #main iframe，如果找不到则直接返回顶层文档
 async function getMainDoc() {{
     let iframe = document.querySelector('#main');
     if (iframe) {{
@@ -1041,7 +1040,6 @@ function setNumberInput(inputEl, value) {{
 }}
 
 const CITY_MAP_RAW = {city_map_json};
-// 强制修正已知印尼城市映射
 const CITY_MAP_CORRECTED = {{
     ...CITY_MAP_RAW,
     "印尼雅加达哈林": "印度尼西亚",
@@ -1619,7 +1617,7 @@ async function processExistingPlanWithManual(row, plan) {{
     return true;
 }}
 
-// ---------- runDailyPlans 保持不变（原本就支持失败继续） ----------
+// ---------- runDailyPlans 保持不变 ----------
 async function runDailyPlans() {{
     console.log('🚀 开始执行当日计划自动化流程...');
     let processedCount = 0;
@@ -1783,9 +1781,8 @@ async function processNextDayRecord(record) {{
         submitBtn.click();
         console.log('✅ 已点击“提交”按钮，弹窗已出现，请手动点击“确定”完成提交。');
         console.log('⏳ 等待30秒，以便您手动操作...');
-        await sleep(30000); // 等待30秒
+        await sleep(30000);
         console.log('⏳ 继续执行下一个计划（假设您已手动提交完成）。');
-        // 可选检查返回列表页
         const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
         if (backBtn) {{
             console.log('✅ 已返回列表页');
@@ -1922,27 +1919,766 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-
-# ==============================
-# 功能 E：值班连班统计（原代码，完全未变）
+        # ==============================
+# 功能 E：值班连班统计
 # ==============================
 def run_feature_e():
-    # 省略，与之前完全一致（已在用户文件中完整）
-    pass
+    st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
+
+    uploaded_file = st.file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
+
+    control_staff_input = st.text_input(
+        "值班人员名单（空格分隔）",
+        value="陈宇鸣 周贤民 吴迪 王浩宇 林泓辰 陈育盛 钟洪达",
+        key="e_control"
+    )
+
+    if uploaded_file:
+        control_staff = set(control_staff_input.strip().split())
+        target_staff = control_staff
+
+        schedules = []
+        file_type = uploaded_file.type
+
+        if file_type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
+            try:
+                df = pd.read_excel(uploaded_file, header=None, engine='openpyxl')
+            except Exception as e:
+                st.error(f"读取Excel失败: {e}")
+                st.stop()
+
+            st.subheader("原始表格预览（前20行）")
+            st.dataframe(df.head(20))
+
+            header_idx = None
+            for i, row in df.iterrows():
+                row_str = " ".join([str(c) for c in row if pd.notna(c)])
+                if "运行管理" in row_str:
+                    header_idx = i
+                    break
+
+            if header_idx is None:
+                st.error("未找到包含'运行管理'的表头行")
+                st.stop()
+
+            col_mapping = {}
+            for idx, val in enumerate(df.iloc[header_idx]):
+                val_str = str(val) if pd.notna(val) else ""
+                if "运行管理" in val_str:
+                    col_mapping[idx] = "management"
+                elif "运行计划" in val_str:
+                    col_mapping[idx] = "plan"
+                elif "运行监控" in val_str:
+                    col_mapping[idx] = "control"
+                elif "运行保障" in val_str:
+                    col_mapping[idx] = "control"
+                elif "运行支援" in val_str:
+                    col_mapping[idx] = "control"
+
+            data_start = header_idx + 1
+            current_date = None
+            day_row = None
+
+            for i in range(data_start, len(df)):
+                row = df.iloc[i]
+                second_cell = str(row[1]) if pd.notna(row[1]) else ""
+                second_cell = second_cell.strip()
+
+                if "白" in second_cell:
+                    first_cell = str(row[0]) if pd.notna(row[0]) else ""
+                    date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
+                    if date_match:
+                        current_date = date_match.group(1)
+                    else:
+                        current_date = first_cell
+                    day_row = row
+                elif "晚" in second_cell and day_row is not None:
+                    if current_date is None:
+                        first_cell = str(row[0]) if pd.notna(row[0]) else ""
+                        date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
+                        if date_match:
+                            current_date = date_match.group(1)
+                    if current_date:
+                        day_people = set()
+                        night_people = set()
+                        for col_idx, role in col_mapping.items():
+                            day_name = str(day_row[col_idx]).strip() if pd.notna(day_row[col_idx]) else ""
+                            night_name = str(row[col_idx]).strip() if pd.notna(row[col_idx]) else ""
+                            if day_name and day_name not in ["nan", "None", ""]:
+                                if day_name in target_staff:
+                                    day_people.add(day_name)
+                            if night_name and night_name not in ["nan", "None", ""]:
+                                if night_name in target_staff:
+                                    night_people.add(night_name)
+                        schedules.append({"date": current_date, "day": day_people, "night": night_people})
+                        day_row = None
+                        current_date = None
+
+            if not schedules:
+                st.error("未能从Excel解析到排班数据，请检查格式")
+                st.stop()
+
+        else:
+            with pdfplumber.open(uploaded_file) as pdf:
+                all_text = ""
+                for page in pdf.pages:
+                    all_text += page.extract_text() + "\n"
+
+            lines = all_text.split("\n")
+            day_shifts = []
+            night_shifts = []
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                if "白" in line and "晚" not in line:
+                    date_match = re.search(r"(\d+月\d+日|\d+日)", line)
+                    date_str = date_match.group(1) if date_match else ""
+                    names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
+                    filtered_names = [n for n in names if n in target_staff and n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
+                    if filtered_names:
+                        day_shifts.append((date_str, filtered_names))
+                elif "晚" in line:
+                    date_match = re.search(r"(\d+月\d+日|\d+日)", line)
+                    date_str = date_match.group(1) if date_match else ""
+                    names = re.findall(r"[\u4e00-\u9fa5]{2,3}", line)
+                    filtered_names = [n for n in names if n in target_staff and n not in ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日", "运行控制", "运行管理", "白班", "夜班", "带班主任"]]
+                    if filtered_names:
+                        night_shifts.append((date_str, filtered_names))
+
+            min_len = min(len(day_shifts), len(night_shifts))
+            for i in range(min_len):
+                date_day, day_names = day_shifts[i]
+                date_night, night_names = night_shifts[i]
+                date_str = date_day if date_day else date_night
+                schedules.append({
+                    "date": date_str,
+                    "day": set(day_names),
+                    "night": set(night_names)
+                })
+
+            if not schedules:
+                st.error("未识别到任何排班数据，请检查文件格式")
+                st.stop()
+
+        st.success(f"成功识别 {len(schedules)} 天的排班数据")
+
+        import re as _re
+        def parse_date_to_tuple(date_str):
+            match = _re.search(r'(\d+)月(\d+)日', date_str)
+            if match:
+                return (int(match.group(1)), int(match.group(2)))
+            match = _re.search(r'(\d+)日', date_str)
+            if match:
+                return (9, int(match.group(1)))
+            return (9, 99)
+
+        schedules.sort(key=lambda x: parse_date_to_tuple(x['date']))
+
+        with st.expander("🔍 完整排班数据（请核对）"):
+            st.write(f"**总天数：{len(schedules)} 天**")
+            for sch in schedules:
+                st.write(f"**{sch['date']}**")
+                st.write(f"  - 白班：{', '.join(sorted(sch['day'])) if sch['day'] else '（无）'}")
+                st.write(f"  - 夜班：{', '.join(sorted(sch['night'])) if sch['night'] else '（无）'}")
+
+        all_persons = target_staff
+        stats = {name: {"consecutive": 0, "pure_day": 0, "pure_night": 0, "total_night": 0, "rest_days": 0} for name in all_persons}
+        attendance_records = {name: [] for name in all_persons}
+
+        for sch in schedules:
+            date_str = sch["date"]
+            day_set = sch["day"]
+            night_set = sch["night"]
+
+            for name in all_persons:
+                in_day = name in day_set
+                in_night = name in night_set
+                attendance_records[name].append(in_day or in_night)
+
+                if in_day and in_night:
+                    stats[name]["consecutive"] += 1
+                elif in_day and not in_night:
+                    stats[name]["pure_day"] += 1
+                elif not in_day and in_night:
+                    stats[name]["pure_night"] += 1
+
+        for name in all_persons:
+            stats[name]["total_night"] = stats[name]["consecutive"] + stats[name]["pure_night"]
+
+        for name in all_persons:
+            rest = 0
+            cnt = 0
+            for present in attendance_records[name]:
+                if not present:
+                    cnt += 1
+                else:
+                    if cnt >= 2:
+                        rest += (cnt - 1)
+                    cnt = 0
+            if cnt >= 2:
+                rest += (cnt - 1)
+            stats[name]["rest_days"] = rest
+
+        result_data = []
+        for name in all_persons:
+            consecutive = stats[name]["consecutive"]
+            pure_day = stats[name]["pure_day"]
+            pure_night = stats[name]["pure_night"]
+
+            main_shift_min = 15 * 60 + 30
+            day_shift_min = 8 * 60 + 30
+            night_shift_min = 15 * 60 + 30
+
+            total_minutes = consecutive * main_shift_min + pure_day * day_shift_min + pure_night * night_shift_min
+            hours = total_minutes // 60
+            minutes = total_minutes % 60
+            total_time_str = f"{hours}:{minutes:02d}"
+
+            result_data.append({
+                "姓名": name,
+                "运管主班": consecutive,
+                "运控白班": pure_day,
+                "运控夜班": pure_night,
+                "补贴天数": stats[name]["total_night"],
+                "休息天数": stats[name]["rest_days"],
+                "累计在岗时间": total_time_str
+            })
+
+        result_df = pd.DataFrame(result_data).sort_values(by="运管主班", ascending=False)
+
+        st.subheader("📌 值班人员")
+        st.dataframe(result_df, use_container_width=True, height=400)
+
+        csv = result_df.to_csv(index=False).encode("utf-8-sig")
+        st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
 
 # ==============================
-# 功能 F：世界时行程（原代码，完全未变）
+# 功能 F：世界时行程
 # ==============================
 def run_feature_f():
-    # 省略，与之前完全一致
-    pass
+    st.markdown("从Jetops系统导出的北京时间的行程 Excel 文件转换为世界时的行程，便于复制粘贴。")
+    st.info("💡 每次上传将自动与上一次记录对比，新增或变更的航段会在下方红色高亮显示。")
+
+    HISTORY_FILE = "flight_history.json"
+
+    def load_history():
+        if os.path.exists(HISTORY_FILE):
+            try:
+                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except:
+                return {"records": []}
+        else:
+            return {"records": []}
+
+    def save_history(history):
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+
+    def parse_time_column(val):
+        if pd.isna(val):
+            return None
+        if isinstance(val, (pd.Timestamp, datetime)):
+            return val.strftime('%H:%M')
+        if hasattr(val, 'strftime'):
+            return val.strftime('%H:%M')
+        s = str(val).strip()
+        if ':' in s:
+            return s[:5]
+        return s
+
+    def convert_to_utc(date_val, time_str):
+        if pd.isna(date_val) or time_str is None:
+            return None
+        if isinstance(date_val, (pd.Timestamp, datetime)):
+            date_str = date_val.strftime('%Y-%m-%d')
+        else:
+            date_str = str(date_val).split()[0]
+        dt_str = f"{date_str} {time_str}"
+        try:
+            dt_local = pd.to_datetime(dt_str)
+            dt_utc = dt_local - timedelta(hours=8)
+            return dt_utc
+        except:
+            return None
+
+    def format_utc(dt):
+        if dt is None:
+            return ""
+        months = ['JAN','FEB','MAR','APR','MAY','JUN',
+                  'JUL','AUG','SEP','OCT','NOV','DEC']
+        day = dt.day
+        month = months[dt.month - 1]
+        hour = dt.hour
+        minute = dt.minute
+        return f"{day:02d}{month} {hour:02d}{minute:02d}Z"
+
+    def generate_plans(df):
+        required = ['飞机注册号', '出发地', '到达地', '出发日期', '计划出发', '到达日期', '预计到达', '用途']
+        for col in required:
+            if col not in df.columns:
+                st.error(f"❌ 缺少列：{col}")
+                return None
+
+        df = df.dropna(subset=['出发地', '到达地', '出发日期', '计划出发'])
+        if df.empty:
+            st.warning("没有有效的航段数据")
+            return None
+
+        plans = {}
+        for idx, row in df.iterrows():
+            reg = row['飞机注册号']
+            if pd.isna(reg) or str(reg).strip() == '':
+                reg = "N/A"
+            else:
+                reg = str(reg).strip()
+
+            dep_time = parse_time_column(row['计划出发'])
+            arr_time = parse_time_column(row['预计到达'])
+            if dep_time is None or arr_time is None:
+                continue
+
+            dep_utc = convert_to_utc(row['出发日期'], dep_time)
+            arr_utc = convert_to_utc(row['到达日期'], arr_time)
+            if dep_utc is None or arr_utc is None:
+                continue
+
+            use = str(row['用途']) if not pd.isna(row['用途']) else ''
+            flight_type = 'FERRY' if '调机' in use else 'PAX'
+
+            line = (f"ETD {row['出发地']} {format_utc(dep_utc)} // "
+                    f"ETA {row['到达地']} {format_utc(arr_utc)}  {flight_type}")
+
+            if reg not in plans:
+                plans[reg] = []
+            plans[reg].append((dep_utc, line))
+
+        result = {}
+        for reg, items in plans.items():
+            items.sort(key=lambda x: x[0])
+            lines = [reg]
+            lines.extend([item[1] for item in items])
+            result[reg] = "\n".join(lines)
+
+        return result
+
+    def sort_plans(plans_dict):
+        priority_order = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R']
+        all_keys = list(plans_dict.keys())
+        priority_keys = [k for k in priority_order if k in all_keys]
+        remaining_keys = [k for k in all_keys if k not in priority_order and k != "N/A"]
+        remaining_keys.sort()
+        na_keys = [k for k in all_keys if k == "N/A"]
+        sorted_keys = priority_keys + remaining_keys + na_keys
+        return {k: plans_dict[k] for k in sorted_keys}
+
+    def diff_plans(old_plans, new_plans):
+        changes = {}
+        all_regs = set(old_plans.keys()) | set(new_plans.keys())
+        for reg in all_regs:
+            old_lines = set(old_plans.get(reg, "").split('\n')) if old_plans.get(reg) else set()
+            new_lines = set(new_plans.get(reg, "").split('\n')) if new_plans.get(reg) else set()
+            old_lines.discard(reg)
+            new_lines.discard(reg)
+            added = new_lines - old_lines
+            for line in added:
+                changes[(reg, line)] = 'added'
+        return changes
+
+    uploaded_file_2 = st.file_uploader("📤 上传航段数据导出（北京时间）", type=["xlsx"], key="f_worldtime")
+
+    if uploaded_file_2 is not None:
+        try:
+            df = pd.read_excel(uploaded_file_2, skiprows=1)
+            st.success("✅ 文件读取成功")
+
+            new_plans = generate_plans(df)
+            if new_plans is None:
+                st.stop()
+
+            sorted_new_plans = sort_plans(new_plans)
+
+            history = load_history()
+            old_plans = {}
+            if history["records"]:
+                last_record = history["records"][-1]
+                old_plans = last_record.get("data", {})
+
+            changes = diff_plans(old_plans, new_plans)
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            filename = uploaded_file_2.name
+            new_record = {
+                "timestamp": timestamp,
+                "filename": filename,
+                "data": new_plans
+            }
+            history["records"].append(new_record)
+            if len(history["records"]) > 20:
+                history["records"] = history["records"][-20:]
+            save_history(history)
+
+            st.subheader("📋 生成的飞行计划（红色为新增/变更）")
+
+            for reg, text in sorted_new_plans.items():
+                lines = text.split('\n')
+                has_changes = any((reg, line) in changes for line in lines if line != reg)
+
+                if has_changes:
+                    st.markdown(f"**✈️ {reg}** 🔴 <span style='color:red;font-size:0.9rem;'>（有新增或变更）</span>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"**✈️ {reg}**")
+
+                plain_lines = []
+                for line in lines:
+                    if line == reg:
+                        continue
+                    plain_lines.append(line)
+
+                plain_text = "\n".join(plain_lines)
+                st.code(plain_text, language="text")
+
+            full_text = ""
+            for reg, text in sorted_new_plans.items():
+                full_text += f"{text}\n\n"
+            with st.expander("📦 全部计划合并（点击展开）"):
+                st.code(full_text, language="text")
+
+            with st.expander("📜 查看历史上传记录"):
+                if history["records"]:
+                    for i, rec in enumerate(history["records"]):
+                        st.write(f"{i+1}. {rec['timestamp']} - {rec['filename']}")
+                else:
+                    st.write("暂无历史记录")
+
+            if st.button("🗑️ 清除所有历史记录", key="clear_history_f"):
+                save_history({"records": []})
+                st.success("历史已清除，请刷新页面")
+                st.rerun()
+
+        except Exception as e:
+            st.error(f"❌ 处理出错：{e}")
+            st.stop()
+    else:
+        st.info("请上传一个符合格式的 Excel 文件。")
+
+    st.markdown("---")
+    st.caption("🛠️ 工具说明：日期/时间按北京时间（UTC+8）自动转换为世界时（Z）。对比功能基于上一次上传的记录。")
 
 # ==============================
-# 功能 G：航路处理工具（原代码，完全未变）
+# 功能 G：航路处理工具
 # ==============================
 def run_feature_g():
-    # 省略，与之前完全一致
-    pass
+    st.markdown("支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀，兼容不规整数据")
+
+    def parse_coord(coord_str):
+        letter = coord_str[0]
+        num_part = coord_str[1:]
+        if letter == 'N':
+            deg = int(num_part[0:2])
+            minute = int(num_part[2:4])
+            sec_part = num_part[4:]
+            if '.' in sec_part:
+                sec_float = float(sec_part)
+                sec_int = int(round(sec_float))
+            else:
+                sec_int = int(sec_part)
+            if sec_int >= 60:
+                sec_int -= 60
+                minute += 1
+                if minute >= 60:
+                    minute -= 60
+                    deg += 1
+            return f"{deg:02d}{minute:02d}{sec_int:02d}"
+        elif letter == 'E':
+            deg = int(num_part[0:3])
+            minute = int(num_part[3:5])
+            sec_part = num_part[5:]
+            if '.' in sec_part:
+                sec_float = float(sec_part)
+                sec_int = int(round(sec_float))
+            else:
+                sec_int = int(sec_part)
+            if sec_int >= 60:
+                sec_int -= 60
+                minute += 1
+                if minute >= 60:
+                    minute -= 60
+                    deg += 1
+            return f"{deg:03d}{minute:02d}{sec_int:02d}"
+        else:
+            raise ValueError(f"未知的坐标前缀: {letter}")
+
+    def base_name(s):
+        return s.split('@')[0]
+
+    def is_open_point(s):
+        base = base_name(s)
+        if re.match(r'^[A-Z]{2,5}$', base):
+            return True
+        if re.match(r'^P[A-Z]+$', base):
+            return True
+        return False
+
+    def is_p_point(s):
+        base = base_name(s)
+        return re.match(r'^P\d+$', base) is not None
+
+    def clean_route(r):
+        if r.startswith('#'):
+            return r[1:]
+        return r
+
+    def is_open_route(rt):
+        return rt and rt[0] not in ('H', 'J', 'V')
+
+    def extract_table(text):
+        tokens = text.strip().split()
+        start_idx = 0
+        for i, tok in enumerate(tokens):
+            if tok.isdigit() and 1 <= int(tok) <= 40:
+                start_idx = i
+                break
+        tokens = tokens[start_idx:]
+
+        lines = []
+        i = 0
+        while i < len(tokens):
+            if tokens[i].isdigit():
+                line = [tokens[i]]
+                i += 1
+                while i < len(tokens) and not tokens[i].isdigit():
+                    line.append(tokens[i])
+                    i += 1
+                lines.append(line)
+
+        points = []
+        routes = []
+        for line in lines:
+            lat_idx = None
+            for idx, tok in enumerate(line):
+                if tok.startswith('N') and tok[1:].replace('.', '', 1).isdigit():
+                    lat_idx = idx
+                    break
+            if lat_idx is None:
+                continue
+            lon_idx = lat_idx + 1
+            if lon_idx >= len(line) or not line[lon_idx].startswith('E'):
+                continue
+            lat_str = line[lat_idx]
+            lon_str = line[lon_idx]
+
+            route = None
+            if lon_idx + 1 < len(line):
+                next_tok = line[lon_idx + 1]
+                if re.match(r'^[A-Z][A-Z0-9]*$', next_tok) and not next_tok[0].isdigit():
+                    route = next_tok
+
+            point_name = None
+            for j in range(lat_idx - 1, 0, -1):
+                tok = line[j]
+                if is_open_point(tok) or is_p_point(tok):
+                    point_name = tok
+                    break
+            if point_name is None:
+                continue
+
+            if is_p_point(point_name):
+                lat_int = parse_coord(lat_str)
+                lon_int = parse_coord(lon_str)
+                point_display = f"{point_name}@{lat_int}N{lon_int}E"
+            else:
+                point_display = point_name
+
+            points.append(point_display)
+            if route is not None:
+                routes.append(route)
+
+        seq = []
+        for i in range(len(points)):
+            seq.append(points[i])
+            if i < len(routes):
+                seq.append(routes[i])
+        return seq
+
+    def extract_chinese(text):
+        text = re.sub(r'[\u4e00-\u9fa5，、。；：""''（）【】]', ' ', text)
+        words = text.split()
+        seq = []
+        for w in words:
+            if '(' in w and ')' in w:
+                m = re.search(r'\(([A-Z]+)\)', w)
+                if m:
+                    point = m.group(1)
+                    prefix = w[:w.find('(')]
+                    m_route = re.search(r'([A-Z]\d+)$', prefix)
+                    if m_route:
+                        seq.append(m_route.group(1))
+                    seq.append(point)
+            elif re.match(r'^[A-Z]\d+[A-Z]{2,5}$', w) or re.match(r'^[A-Z]\d+P\d+$', w):
+                m = re.match(r'^([A-Z]\d+)([A-Z]{2,5}|P\d+)$', w)
+                if m:
+                    seq.append(m.group(1))
+                    seq.append(m.group(2))
+            elif re.match(r'^[A-Z]\d+$', w):
+                seq.append(w)
+            elif is_open_point(w) or is_p_point(w):
+                seq.append(w)
+        return seq
+
+    def step1_extract(text):
+        if re.search(r'N\d{5,6}(?:\.\d+)?\s+E\d{6,7}(?:\.\d+)?', text):
+            return extract_table(text), 'table'
+        else:
+            return extract_chinese(text), 'chinese'
+
+    def step2_reduce(seq):
+        L = seq[:]
+        changed = True
+        while changed:
+            changed = False
+            n = len(L)
+            candidates = []
+            for i in range(0, n, 2):
+                if not is_open_point(L[i]):
+                    continue
+                if i + 1 >= n:
+                    continue
+                first_route = clean_route(L[i+1])
+                if not is_open_route(first_route):
+                    continue
+                for j in range(i+2, n, 2):
+                    all_same = True
+                    for k in range(i+1, j, 2):
+                        rt = clean_route(L[k])
+                        if rt != first_route or not is_open_route(rt):
+                            all_same = False
+                            break
+                    if not all_same:
+                        break
+                    if is_open_point(L[j]):
+                        length = (j - i) // 2
+                        if length >= 2:
+                            candidates.append((i, j, length))
+            if not candidates:
+                break
+            candidates.sort(key=lambda x: -x[2])
+            best_i, best_j, _ = candidates[0]
+            new_segment = [L[best_i], L[best_i+1], L[best_j]]
+            L = L[:best_i] + new_segment + L[best_j+1:]
+            changed = True
+        return L
+
+    def step3_add_hash(seq):
+        pts = seq[0::2]
+        rts = seq[1::2]
+        m = len(rts)
+
+        def is_closed_route(rt):
+            return rt.startswith(('H', 'J', 'V'))
+
+        def is_p(pt):
+            base = base_name(pt)
+            return re.match(r'^P\d+$', base) is not None
+
+        res = [pts[0]]
+        for i, rt in enumerate(rts):
+            left = pts[i]
+            right = pts[i+1]
+            need_hash = False
+            if is_closed_route(rt):
+                need_hash = True
+            elif is_p(left) or is_p(right):
+                need_hash = True
+            res.append('#' + rt if need_hash else rt)
+            res.append(right)
+        return res
+
+    if "last_processed_input_route" not in st.session_state:
+        st.session_state.last_processed_input_route = ""
+    if "result_text_route" not in st.session_state:
+        st.session_state.result_text_route = ""
+
+    input_text_route = st.text_area(
+        "📋 请输入待处理的航路文本",
+        key="input_text_route_g",
+        height=300,
+        placeholder="粘贴民航航线数据，支持多行表格格式/纯中文描述格式..."
+    )
+
+    btn_col1, btn_col2, btn_col3 = st.columns([2, 2, 8])
+    with btn_col1:
+        process_btn = st.button("⚙️ 处理", type="primary", use_container_width=True, key="process_route_g")
+    with btn_col2:
+        clear_btn = st.button("🗑️ 清空", use_container_width=True, key="clear_route_g")
+
+    if clear_btn:
+        st.session_state.input_text_route_g = ""
+        st.session_state.last_processed_input_route = ""
+        st.session_state.result_text_route = ""
+        st.rerun()
+
+    if process_btn and st.session_state.get("input_text_route_g", "").strip():
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        total_steps = 4
+        current_step = 0
+
+        try:
+            current_step += 1
+            progress_bar.progress(current_step / total_steps)
+            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（识别输入类型）")
+            seq, fmt = step1_extract(st.session_state.input_text_route_g)
+
+            current_step += 1
+            progress_bar.progress(current_step / total_steps)
+            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（精简相同开放航路）")
+            if fmt == 'table':
+                seq = step2_reduce(seq)
+
+            current_step += 1
+            progress_bar.progress(current_step / total_steps)
+            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（添加航路#前缀）")
+            if fmt == 'table':
+                seq = step3_add_hash(seq)
+
+            current_step += 1
+            progress_bar.progress(current_step / total_steps)
+            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（生成最终结果）")
+            result = ' '.join(seq) if seq else "⚠️ 未提取到有效航路数据"
+
+            st.session_state.result_text_route = result
+            st.session_state.last_processed_input_route = st.session_state.input_text_route_g
+
+            progress_bar.empty()
+            status_text.empty()
+            st.success("✅ 处理完成！结果如下：")
+
+        except Exception as e:
+            progress_bar.empty()
+            status_text.empty()
+            st.error(f"❌ 处理失败：{str(e)}")
+            with st.expander("🔍 查看详细错误信息", expanded=False):
+                st.code(traceback.format_exc(), language="text")
+
+    if st.session_state.get("result_text_route", ""):
+        current_input = st.session_state.get("input_text_route_g", "")
+        last_input = st.session_state.last_processed_input_route
+
+        st.subheader("📊 处理结果", divider="blue")
+
+        if current_input != last_input:
+            st.warning("⚠️ 输入已更改，当前显示的是上一次处理的结果，如需更新请点击「处理」按钮。")
+
+        st.code(st.session_state.result_text_route, language="text")
+
+    if not st.session_state.get("result_text_route", "") and not st.session_state.get("input_text_route_g", "").strip():
+        st.info("💡 提示：粘贴航路数据后，点击「处理」即可，支持30+行不规整表格数据")
+
+    st.markdown("---")
+    st.caption("✈️ 支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀")
 
 # ==============================
 # 主界面
