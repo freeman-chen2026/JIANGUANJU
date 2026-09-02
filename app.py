@@ -2689,22 +2689,31 @@ def run_feature_g():
 # ==============================
 st.set_page_config(page_title="监管局的表，发个那三位", layout="wide")
 
-# 注入 CSS 固定选项卡
+# 注入 CSS 固定标题和选项卡
 st.markdown("""
 <style>
-    /* 固定 tabs 容器 */
-    div[data-testid="stTabs"] {
-        position: sticky;
-        top: 0px;
-        background-color: white;
-        z-index: 999;
-        padding-top: 10px;
-        padding-bottom: 5px;
-        border-bottom: 1px solid #ddd;
+    /* 固定标题 */
+    h1 {
+        position: sticky !important;
+        top: 0px !important;
+        background-color: white !important;
+        z-index: 1000 !important;
+        padding: 10px 0 5px 0 !important;
+        margin: 0 !important;
+        border-bottom: 1px solid #eee;
     }
-    /* 调整主体内容的上边距，防止被遮挡 */
+    /* 固定所有 tabs 容器 */
+    div[data-testid="stTabs"] {
+        position: sticky !important;
+        top: 60px !important;  /* 标题高度+间距 */
+        background-color: white !important;
+        z-index: 999 !important;
+        padding: 10px 0 5px 0 !important;
+        border-bottom: 1px solid #ddd !important;
+    }
+    /* 防止内容被遮挡 */
     .main > div {
-        padding-top: 0px;
+        padding-top: 0px !important;
     }
 </style>
 """, unsafe_allow_html=True)
