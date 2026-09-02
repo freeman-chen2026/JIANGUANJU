@@ -1818,7 +1818,6 @@ async function runNextDayPlans() {{
 def run_feature_d():
     st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案次日计划**。")
 
-    # 固定标题行号为1，不再显示侧边栏
     header_row = 1
 
     uploaded_file = st.file_uploader("📂 上传 Excel 文件（航段数据）", type=["xlsx", "xls"], key="d_upload")
@@ -2378,7 +2377,6 @@ def run_feature_f():
 def run_feature_g():
     st.markdown("支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀，兼容不规整数据")
 
-    # 辅助函数
     def parse_coord(coord_str):
         letter = coord_str[0]
         num_part = coord_str[1:]
@@ -2602,7 +2600,6 @@ def run_feature_g():
             res.append(right)
         return res
 
-    # UI
     if "last_processed_input_route" not in st.session_state:
         st.session_state.last_processed_input_route = ""
     if "result_text_route" not in st.session_state:
@@ -2688,9 +2685,30 @@ def run_feature_g():
     st.caption("✈️ 支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀")
 
 # ==============================
-# 主界面 - 分成两行显示选项卡
+# 主界面 - 分成两行显示选项卡，并固定顶部
 # ==============================
 st.set_page_config(page_title="监管局的表，发个那三位", layout="wide")
+
+# 注入 CSS 固定选项卡
+st.markdown("""
+<style>
+    /* 固定 tabs 容器 */
+    div[data-testid="stTabs"] {
+        position: sticky;
+        top: 0px;
+        background-color: white;
+        z-index: 999;
+        padding-top: 10px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #ddd;
+    }
+    /* 调整主体内容的上边距，防止被遮挡 */
+    .main > div {
+        padding-top: 0px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 st.title("监管局的表，发个那三位")
 
 # 第一行：功能1、2、3
@@ -2710,7 +2728,7 @@ with tab3:
     run_feature_c()
 
 # 第二行：功能4、5、6、7
-st.markdown("---")  # 分隔线
+st.markdown("---")
 tab4, tab5, tab6, tab7 = st.tabs([
     "📜 通航脚本",
     "📊 值班连班统计",
