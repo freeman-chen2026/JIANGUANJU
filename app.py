@@ -1862,10 +1862,8 @@ def run_feature_d():
                 st.info(f"实际列名: {list(df.columns)}")
                 return
 
-            # ---------- 1. 区分已执飞和未来未执飞计划 ----------
-            # 已执飞：实际到达非空（所有日期）
+            # ---------- 1. 区分已执飞和未来计划 ----------
             df_daily = df[df["实际到达"].notna() & (df["实际到达"].astype(str).str.strip() != "")].copy()
-            # 未来计划：出发日期 >= 今天 且 实际到达为空
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
             today = date.today()
             df_future = df[(df['出发日期'] >= today) & (df["实际到达"].isna() | (df["实际到达"].astype(str).str.strip() == ""))].copy()
@@ -1876,15 +1874,13 @@ def run_feature_d():
                 st.warning("没有需要处理的计划。")
                 return
 
-            # ---------- 2. 构建记录并让用户选择排除项 ----------
-            # 构建 daily_records
+            # ---------- 2. 构建记录 ----------
             daily_records = df_daily.to_dict(orient="records")
             for rec in daily_records:
                 for k, v in rec.items():
                     if pd.isna(v):
                         rec[k] = ""
 
-            # 构建未来计划记录（原 nextday_records）
             future_records = []
             for _, row in df_future.iterrows():
                 purpose_raw = row.get("用途", "")
@@ -1910,64 +1906,88 @@ def run_feature_d():
                     "flight_minutes": minutes
                 })
 
-            # ---------- 用户选择排除 ----------
-            # 为每条记录生成摘要
-            daily_summaries = []
-            for rec in daily_records:
-                summary = f"{rec['飞机注册号']} {rec['出发日期']} {rec['出发城市']}->{rec['到达城市']}"
-                daily_summaries.append(summary)
+            # ---------- 3. 使用复选框让用户选择排除项 ----------
+            # 为每条记录生成唯一ID
+            daily_items = []
+            for idx, rec in enumerate(daily_records):
+                item = {
+                    "id": f"d_{idx}",
+                    "label": f"{rec['飞机注册号']} {rec['出发日期']} {rec['出发城市']}->{rec['到达城市']}",
+                    "record": rec
+                }
+                daily_items.append(item)
 
-            future_summaries = []
-            for rec in future_records:
-                summary = f"{rec['reg']} {rec['start_date']} {rec['dep_city']}->{rec['arr_city']}"
-                future_summaries.append(summary)
+            future_items = []
+            for idx, rec in enumerate(future_records):
+                item = {
+                    "id": f"f_{idx}",
+                    "label": f"{rec['reg']} {rec['start_date']} {rec['dep_city']}->{rec['arr_city']}",
+                    "record": rec
+                }
+                future_items.append(item)
 
-            # 多选排除框（默认全部选中）
             st.subheader("✏️ 选择需要排除的计划（取消勾选即可不写入脚本）")
+
+            # 全选/取消全选功能
             col1, col2 = st.columns(2)
             with col1:
-                if daily_summaries:
-                    exclude_daily = st.multiselect(
-                        "已执飞计划（可取消勾选排除）",
-                        options=daily_summaries,
-                        default=daily_summaries,
-                        key="exclude_daily"
-                    )
-                    # 被排除的是不在 exclude_daily 中的
-                    excluded_daily = [s for s in daily_summaries if s not in exclude_daily]
+                if daily_items:
+                    select_all_daily = st.checkbox("全选已执飞计划", value=True, key="select_all_daily")
                 else:
-                    exclude_daily = []
-                    excluded_daily = []
+                    select_all_daily = True
             with col2:
-                if future_summaries:
-                    exclude_future = st.multiselect(
-                        "未来计划（可取消勾选排除）",
-                        options=future_summaries,
-                        default=future_summaries,
-                        key="exclude_future"
-                    )
-                    excluded_future = [s for s in future_summaries if s not in exclude_future]
+                if future_items:
+                    select_all_future = st.checkbox("全选未来计划", value=True, key="select_all_future")
                 else:
-                    exclude_future = []
-                    excluded_future = []
+                    select_all_future = True
 
-            # 过滤掉被排除的记录
-            if excluded_daily:
-                # 找出被排除的记录的索引
-                indices_to_remove = [i for i, s in enumerate(daily_summaries) if s in excluded_daily]
-                filtered_daily_records = [rec for i, rec in enumerate(daily_records) if i not in indices_to_remove]
-            else:
-                filtered_daily_records = daily_records
+            # 显示复选框列表
+            col1, col2 = st.columns(2)
 
-            if excluded_future:
-                indices_to_remove = [i for i, s in enumerate(future_summaries) if s in excluded_future]
-                filtered_future_records = [rec for i, rec in enumerate(future_records) if i not in indices_to_remove]
-            else:
-                filtered_future_records = future_records
+            # 已执飞计划（左侧）
+            with col1:
+                if daily_items:
+                    st.markdown("**已执飞计划**")
+                    daily_selected = {}
+                    for item in daily_items:
+                        # 如果全选被勾选，默认选中；否则保持用户之前的选择
+                        default_val = select_all_daily
+                        # 使用 session_state 保存用户选择
+                        key = f"daily_{item['id']}"
+                        checked = st.checkbox(item['label'], value=default_val, key=key)
+                        daily_selected[item['id']] = checked
+                else:
+                    st.info("暂无已执飞计划")
+
+            # 未来计划（右侧）
+            with col2:
+                if future_items:
+                    st.markdown("**未来计划**")
+                    future_selected = {}
+                    for item in future_items:
+                        default_val = select_all_future
+                        key = f"future_{item['id']}"
+                        checked = st.checkbox(item['label'], value=default_val, key=key)
+                        future_selected[item['id']] = checked
+                else:
+                    st.info("暂无未来计划")
+
+            # 过滤被选中的记录（选中的保留，未选中的排除）
+            filtered_daily_records = []
+            if daily_items:
+                for item in daily_items:
+                    if daily_selected.get(item['id'], True):
+                        filtered_daily_records.append(item['record'])
+
+            filtered_future_records = []
+            if future_items:
+                for item in future_items:
+                    if future_selected.get(item['id'], True):
+                        filtered_future_records.append(item['record'])
 
             st.info(f"✅ 最终脚本将包含 {len(filtered_daily_records)} 条已执飞计划和 {len(filtered_future_records)} 条未来计划")
 
-            # ---------- 3. 生成脚本 ----------
+            # ---------- 4. 生成脚本 ----------
             custom_detail_map = {}
             city_map, detail_map = build_city_mappings(df, custom_detail_map)
             city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
