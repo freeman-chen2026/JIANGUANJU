@@ -1840,7 +1840,7 @@ async function runNextDayPlans() {{
     return template
 
 def run_feature_d():
-    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案未来所有计划**。")
+    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案次日计划**。")
 
     header_row = 1
 
@@ -1862,29 +1862,29 @@ def run_feature_d():
                 st.info(f"实际列名: {list(df.columns)}")
                 return
 
+            # ---------- 1. 区分已执飞和未来未执飞计划 ----------
+            # 已执飞：实际到达非空（所有日期）
             df_daily = df[df["实际到达"].notna() & (df["实际到达"].astype(str).str.strip() != "")].copy()
+            # 未来计划：出发日期 >= 今天 且 实际到达为空
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
             today = date.today()
-            # 筛选所有未来日期的计划（出发日期 > 今天）
-            df_future = df[df['出发日期'] > today].copy()
-            st.info(f"✅ 共读取 {len(df)} 条飞行计划，其中当日计划（已执飞）: {len(df_daily)} 条，未来计划（出发日期晚于今天）: {len(df_future)} 条")
+            df_future = df[(df['出发日期'] >= today) & (df["实际到达"].isna() | (df["实际到达"].astype(str).str.strip() == ""))].copy()
+
+            st.info(f"✅ 共读取 {len(df)} 条飞行计划，其中已执飞计划（不限日期）: {len(df_daily)} 条，未来未执飞计划（出发日期 ≥ {today}）: {len(df_future)} 条")
 
             if len(df_daily) == 0 and len(df_future) == 0:
                 st.warning("没有需要处理的计划。")
                 return
 
-            custom_detail_map = {}
-            city_map, detail_map = build_city_mappings(df, custom_detail_map)
-            city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
-            detail_map_json = json.dumps(detail_map, ensure_ascii=False, indent=4)
-            domestic_keywords_json = json.dumps(DOMESTIC_KEYWORDS)
-
+            # ---------- 2. 构建记录并让用户选择排除项 ----------
+            # 构建 daily_records
             daily_records = df_daily.to_dict(orient="records")
             for rec in daily_records:
                 for k, v in rec.items():
                     if pd.isna(v):
                         rec[k] = ""
 
+            # 构建未来计划记录（原 nextday_records）
             future_records = []
             for _, row in df_future.iterrows():
                 purpose_raw = row.get("用途", "")
@@ -1910,11 +1910,75 @@ def run_feature_d():
                     "flight_minutes": minutes
                 })
 
-            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
-            daily_script = generate_daily_script(daily_records, city_map_json, detail_map_json, domestic_keywords_json) if len(daily_records) > 0 else ""
-            future_script = generate_nextday_script(future_records, city_map_json, detail_map_json, domestic_keywords_json) if len(future_records) > 0 else ""
+            # ---------- 用户选择排除 ----------
+            # 为每条记录生成摘要
+            daily_summaries = []
+            for rec in daily_records:
+                summary = f"{rec['飞机注册号']} {rec['出发日期']} {rec['出发城市']}->{rec['到达城市']}"
+                daily_summaries.append(summary)
 
-            final_script = base_script + "\n\n" + daily_script + "\n\n" + future_script + """
+            future_summaries = []
+            for rec in future_records:
+                summary = f"{rec['reg']} {rec['start_date']} {rec['dep_city']}->{rec['arr_city']}"
+                future_summaries.append(summary)
+
+            # 多选排除框（默认全部选中）
+            st.subheader("✏️ 选择需要排除的计划（取消勾选即可不写入脚本）")
+            col1, col2 = st.columns(2)
+            with col1:
+                if daily_summaries:
+                    exclude_daily = st.multiselect(
+                        "已执飞计划（可取消勾选排除）",
+                        options=daily_summaries,
+                        default=daily_summaries,
+                        key="exclude_daily"
+                    )
+                    # 被排除的是不在 exclude_daily 中的
+                    excluded_daily = [s for s in daily_summaries if s not in exclude_daily]
+                else:
+                    exclude_daily = []
+                    excluded_daily = []
+            with col2:
+                if future_summaries:
+                    exclude_future = st.multiselect(
+                        "未来计划（可取消勾选排除）",
+                        options=future_summaries,
+                        default=future_summaries,
+                        key="exclude_future"
+                    )
+                    excluded_future = [s for s in future_summaries if s not in exclude_future]
+                else:
+                    exclude_future = []
+                    excluded_future = []
+
+            # 过滤掉被排除的记录
+            if excluded_daily:
+                # 找出被排除的记录的索引
+                indices_to_remove = [i for i, s in enumerate(daily_summaries) if s in excluded_daily]
+                filtered_daily_records = [rec for i, rec in enumerate(daily_records) if i not in indices_to_remove]
+            else:
+                filtered_daily_records = daily_records
+
+            if excluded_future:
+                indices_to_remove = [i for i, s in enumerate(future_summaries) if s in excluded_future]
+                filtered_future_records = [rec for i, rec in enumerate(future_records) if i not in indices_to_remove]
+            else:
+                filtered_future_records = future_records
+
+            st.info(f"✅ 最终脚本将包含 {len(filtered_daily_records)} 条已执飞计划和 {len(filtered_future_records)} 条未来计划")
+
+            # ---------- 3. 生成脚本 ----------
+            custom_detail_map = {}
+            city_map, detail_map = build_city_mappings(df, custom_detail_map)
+            city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
+            detail_map_json = json.dumps(detail_map, ensure_ascii=False, indent=4)
+            domestic_keywords_json = json.dumps(DOMESTIC_KEYWORDS)
+
+            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
+            daily_script = generate_daily_script(filtered_daily_records, city_map_json, detail_map_json, domestic_keywords_json) if len(filtered_daily_records) > 0 else ""
+            nextday_script = generate_nextday_script(filtered_future_records, city_map_json, detail_map_json, domestic_keywords_json) if len(filtered_future_records) > 0 else ""
+
+            final_script = base_script + "\n\n" + daily_script + "\n\n" + nextday_script + """
 (async () => {
     console.log("========== 开始执行综合流程 ==========");
     if (typeof runDailyPlans === 'function') {
@@ -1925,7 +1989,7 @@ def run_feature_d():
     if (typeof runNextDayPlans === 'function') {
         await runNextDayPlans();
     } else {
-        console.log("没有未来计划需要处理。");
+        console.log("没有次日计划需要处理。");
     }
     console.log("========== 综合流程全部完成 ==========");
 })();
@@ -1933,7 +1997,7 @@ def run_feature_d():
             st.success("脚本生成成功！")
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
             st.code(final_script, language="javascript")
-            st.info("💡 提示：请确保已登录系统并停留在「经营活动信息管理」列表页，脚本将自动处理当日已执飞计划和未来所有未执飞计划。")
+            st.info("💡 提示：请确保已登录系统并停留在「经营活动信息管理」列表页，脚本将自动处理当日已执飞计划和次日未执飞计划。")
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
                 data=final_script,
