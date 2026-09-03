@@ -122,15 +122,28 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     new_total = old_minutes + total_minutes
     ws.cell(row=3, column=12).value = format_duration(new_total)     # L3
 
-    # 判断M3：若有效航段中有调机或维修，则"调机飞行"，否则"公务飞行"
-    m3_value = "公务飞行"
+    # ---------- 修改部分：M3 同时判断调机飞行和公务飞行 ----------
+    has_diaoji = False
+    has_gongwu = False
     if purpose_col and not valid_df.empty:
         for val in valid_df[purpose_col].dropna():
             purpose_str = str(val).strip()
             if "调机" in purpose_str or "维修" in purpose_str:
-                m3_value = "调机飞行"
-                break
-    ws.cell(row=3, column=13).value = m3_value                     # M3
+                has_diaoji = True
+            else:
+                # 其他用途视为公务飞行（载客、共享租赁等）
+                has_gongwu = True
+
+    # 组合M3内容
+    m3_parts = []
+    if has_gongwu:
+        m3_parts.append("公务飞行")
+    if has_diaoji:
+        m3_parts.append("调机飞行")
+    # 如果没有任何用途（极少情况），默认填公务飞行
+    m3_value = "、".join(m3_parts) if m3_parts else "公务飞行"
+    ws.cell(row=3, column=13).value = m3_value                      # M3
+    # ---------- 修改结束 ----------
 
     # N3：收集所有出发城市和到达城市，去重后顿号连接
     locations = set()
