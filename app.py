@@ -1818,7 +1818,7 @@ async function processNextDayRecord(record) {{
         console.log(`处理完成：${record.reg}`);
     } else {
         console.warn('未找到提交按钮');
-    }}
+    }
     await sleep(2000);
     return true;
 }}
