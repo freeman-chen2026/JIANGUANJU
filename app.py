@@ -1788,22 +1788,35 @@ async function processNextDayRecord(record) {{
     if (insuranceSelect) await setSelectValue(insuranceSelect, "已参保");
     else console.warn('未找到保险情况下拉框');
 
-    // ========== 修改点：提交后等待用户手动点击确定 ==========
+    // ========== 修改点：提交后自动点击确定按钮，若失败则等待人工 ==========
     const submitBtn = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[40]/ul/li[2]/input', 5000, true);
-    if (submitBtn) {{
+    if (submitBtn) {
         submitBtn.click();
-        console.log('✅ 已点击“提交”按钮，弹窗已出现，请手动点击“确定”完成提交。');
-        console.log('⏳ 等待30秒，以便您手动操作...');
-        await sleep(30000);
-        console.log('⏳ 继续执行下一个计划（假设您已手动提交完成）。');
-        const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
-        if (backBtn) {{
-            console.log('✅ 已返回列表页');
-        }} else {{
-            console.warn('⚠️ 未检测到返回列表页，继续下一个计划，请确保已手动提交。');
-        }}
-        console.log(`处理完成：${{record.reg}}`);
-    }} else {{
+        console.log('✅ 已点击“提交”按钮，等待弹窗...');
+        // 尝试自动点击确定
+        let confirmBtn = null;
+        for (let attempt = 0; attempt < 8; attempt++) {
+            confirmBtn = await waitForDialogConfirmButton(2000);
+            if (confirmBtn) break;
+            console.log(`等待确定按钮... 第${attempt+1}次尝试`);
+        }
+        if (confirmBtn) {
+            confirmBtn.click();
+            console.log('✅ 已点击确定按钮，提交完成。');
+            // 等待返回列表页
+            const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
+            if (backBtn) {
+                console.log('✅ 已返回列表页');
+            } else {
+                console.warn('⚠️ 未检测到返回列表页，但继续执行下一个计划。');
+            }
+        } else {
+            console.warn('⚠️ 未找到确定按钮，可能出现了错误弹窗，等待30秒供人工处理...');
+            await sleep(30000);
+            console.log('⏳ 继续执行下一个计划（假设已人工处理完成）。');
+        }
+        console.log(`处理完成：${record.reg}`);
+    } else {
         console.warn('未找到提交按钮');
     }}
     await sleep(2000);
