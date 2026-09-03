@@ -1840,7 +1840,7 @@ async function runNextDayPlans() {{
     return template
 
 def run_feature_d():
-    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案次日计划**。")
+    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先自动填入当日已执飞计划，再自动备案未来所有计划**。")
 
     header_row = 1
 
@@ -1865,11 +1865,11 @@ def run_feature_d():
             df_daily = df[df["实际到达"].notna() & (df["实际到达"].astype(str).str.strip() != "")].copy()
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
             today = date.today()
-            tomorrow = today + timedelta(days=1)
-            df_nextday = df[df['出发日期'] == tomorrow].copy()
-            st.info(f"✅ 共读取 {len(df)} 条飞行计划，其中当日计划（已执飞）: {len(df_daily)} 条，次日计划（出发日期为 {tomorrow}）: {len(df_nextday)} 条")
+            # 筛选所有未来日期的计划（出发日期 > 今天）
+            df_future = df[df['出发日期'] > today].copy()
+            st.info(f"✅ 共读取 {len(df)} 条飞行计划，其中当日计划（已执飞）: {len(df_daily)} 条，未来计划（出发日期晚于今天）: {len(df_future)} 条")
 
-            if len(df_daily) == 0 and len(df_nextday) == 0:
+            if len(df_daily) == 0 and len(df_future) == 0:
                 st.warning("没有需要处理的计划。")
                 return
 
@@ -1885,8 +1885,8 @@ def run_feature_d():
                     if pd.isna(v):
                         rec[k] = ""
 
-            nextday_records = []
-            for _, row in df_nextday.iterrows():
+            future_records = []
+            for _, row in df_future.iterrows():
                 purpose_raw = row.get("用途", "")
                 if "维修" in purpose_raw or "调机" in purpose_raw:
                     purpose = "调机"
@@ -1899,7 +1899,7 @@ def run_feature_d():
                 dep_city = str(row["出发城市"]).strip()
                 arr_city = str(row["到达城市"]).strip()
                 reg_raw = str(row["飞机注册号"]).strip()
-                nextday_records.append({
+                future_records.append({
                     "reg": reg_raw,
                     "start_date": start_date,
                     "end_date": end_date,
@@ -1912,9 +1912,9 @@ def run_feature_d():
 
             base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
             daily_script = generate_daily_script(daily_records, city_map_json, detail_map_json, domestic_keywords_json) if len(daily_records) > 0 else ""
-            nextday_script = generate_nextday_script(nextday_records, city_map_json, detail_map_json, domestic_keywords_json) if len(nextday_records) > 0 else ""
+            future_script = generate_nextday_script(future_records, city_map_json, detail_map_json, domestic_keywords_json) if len(future_records) > 0 else ""
 
-            final_script = base_script + "\n\n" + daily_script + "\n\n" + nextday_script + """
+            final_script = base_script + "\n\n" + daily_script + "\n\n" + future_script + """
 (async () => {
     console.log("========== 开始执行综合流程 ==========");
     if (typeof runDailyPlans === 'function') {
@@ -1925,7 +1925,7 @@ def run_feature_d():
     if (typeof runNextDayPlans === 'function') {
         await runNextDayPlans();
     } else {
-        console.log("没有次日计划需要处理。");
+        console.log("没有未来计划需要处理。");
     }
     console.log("========== 综合流程全部完成 ==========");
 })();
@@ -1933,7 +1933,7 @@ def run_feature_d():
             st.success("脚本生成成功！")
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
             st.code(final_script, language="javascript")
-            st.info("💡 提示：请确保已登录系统并停留在「经营活动信息管理」列表页，脚本将自动处理当日已执飞计划和次日未执飞计划。")
+            st.info("💡 提示：请确保已登录系统并停留在「经营活动信息管理」列表页，脚本将自动处理当日已执飞计划和未来所有未执飞计划。")
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
                 data=final_script,
