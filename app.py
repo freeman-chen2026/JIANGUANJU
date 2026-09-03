@@ -1844,7 +1844,8 @@ def run_feature_d():
 
     header_row = 1
 
-    uploaded_file = st.file_uploader("📂 上传 Excel 文件（航段数据）", type=["xlsx", "xls"], key="d_upload")
+    # 修改了上传标签
+    uploaded_file = st.file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
 
     if uploaded_file is not None:
         try:
@@ -1852,8 +1853,9 @@ def run_feature_d():
             df.columns = df.columns.str.strip()
             df = df.dropna(how='all')
             st.success("文件上传成功！")
-            st.subheader("📊 数据预览（前5行）")
-            st.dataframe(df.head())
+            # 删除了数据预览部分
+            # st.subheader("📊 数据预览（前5行）")
+            # st.dataframe(df.head())
 
             required_cols = ["飞机注册号", "出发日期", "到达日期", "用途", "出发城市", "到达城市", "预计飞行时间", "实际到达"]
             missing = [col for col in required_cols if col not in df.columns]
@@ -1907,7 +1909,6 @@ def run_feature_d():
                 })
 
             # ---------- 3. 使用复选框让用户选择排除项 ----------
-            # 为每条记录生成唯一ID
             daily_items = []
             for idx, rec in enumerate(daily_records):
                 item = {
@@ -1928,7 +1929,6 @@ def run_feature_d():
 
             st.subheader("✏️ 选择需要排除的计划（取消勾选即可不写入脚本）")
 
-            # 全选/取消全选功能
             col1, col2 = st.columns(2)
             with col1:
                 if daily_items:
@@ -1941,25 +1941,20 @@ def run_feature_d():
                 else:
                     select_all_future = True
 
-            # 显示复选框列表
             col1, col2 = st.columns(2)
 
-            # 已执飞计划（左侧）
             with col1:
                 if daily_items:
                     st.markdown("**已执飞计划**")
                     daily_selected = {}
                     for item in daily_items:
-                        # 如果全选被勾选，默认选中；否则保持用户之前的选择
                         default_val = select_all_daily
-                        # 使用 session_state 保存用户选择
                         key = f"daily_{item['id']}"
                         checked = st.checkbox(item['label'], value=default_val, key=key)
                         daily_selected[item['id']] = checked
                 else:
                     st.info("暂无已执飞计划")
 
-            # 未来计划（右侧）
             with col2:
                 if future_items:
                     st.markdown("**未来计划**")
@@ -1972,7 +1967,6 @@ def run_feature_d():
                 else:
                     st.info("暂无未来计划")
 
-            # 过滤被选中的记录（选中的保留，未选中的排除）
             filtered_daily_records = []
             if daily_items:
                 for item in daily_items:
