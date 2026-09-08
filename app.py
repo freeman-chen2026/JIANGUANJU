@@ -105,8 +105,14 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
 
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
-    ws.cell(row=2, column=10).value = f"*昨日总飞行时间\n（昨日指{yesterday.month}月{yesterday.day}日）*"
+    tomorrow = today + timedelta(days=1)
 
+    # ========== 新增：第5行和第2行的数据更新 ==========
+    # ---- 1. 更新 H2 和 I2 的日期 ----
+    ws.cell(row=2, column=8).value = f"{yesterday.month}月{yesterday.day}日\n总飞行时间"
+    ws.cell(row=2, column=9).value = f"{yesterday.month}月{yesterday.day}日\n飞行架次"
+
+    # ---- 2. 筛选有效航段（有飞行时间） ----
     valid_mask = excel2_df[flight_col].notna()
     valid_df = excel2_df[valid_mask].copy()
 
@@ -114,15 +120,91 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     for val in valid_df[flight_col]:
         total_minutes += parse_duration(val)
 
+    total_hours = total_minutes / 60.0
+    total_hours_str = f"{total_hours:.2f}"
+    total_flights = len(valid_df)
+
+    # ---- 3. 写入 H5 和 I5 ----
+    ws.cell(row=5, column=8).value = total_hours_str   # H5
+    ws.cell(row=5, column=9).value = total_flights     # I5
+
+    # ---- 4. J5 累计时间 ----
+    old_j5 = ws.cell(row=5, column=10).value
+    if old_j5 is None or old_j5 == "":
+        old_j5 = 0.0
+    else:
+        try:
+            old_j5 = float(old_j5)
+        except:
+            old_j5 = 0.0
+    new_j5 = old_j5 + total_hours
+    ws.cell(row=5, column=10).value = f"{new_j5:.2f}"   # J5
+
+    # ---- 5. K5 累计架次 ----
+    old_k5 = ws.cell(row=5, column=11).value
+    if old_k5 is None or old_k5 == "":
+        old_k5 = 0
+    else:
+        try:
+            old_k5 = int(old_k5)
+        except:
+            old_k5 = 0
+    new_k5 = old_k5 + total_flights
+    ws.cell(row=5, column=11).value = new_k5            # K5
+
+    # ---- 6. M5：运行地点（有效航段去重） ----
+    m5_locations = set()
+    for _, row in valid_df.iterrows():
+        dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
+        arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
+        if dep:
+            m5_locations.add(dep)
+        if arr:
+            m5_locations.add(arr)
+    m5_list = sorted(m5_locations)
+    m5_value = '、'.join(m5_list) + '/通航运输' if m5_list else '/通航运输'
+    ws.cell(row=5, column=13).value = m5_value          # M5
+
+    # ---- 7. N5：使用航空器数量 ----
+    reg_series_valid = valid_df[reg_col].dropna()
+    unique_regs = reg_series_valid.astype(str).unique()
+    ws.cell(row=5, column=14).value = len(unique_regs)  # N5
+
+    # ---- 8. S5：次日计划运行地点 ----
+    date_col = auto_match_column(excel2_df, ["出发日期", "起飞日期", "计划日期"])
+    if date_col is not None:
+        excel2_df['_date'] = pd.to_datetime(excel2_df[date_col]).dt.date
+        actual_arr_col = auto_match_column(excel2_df, ["实际到达", "到达时间"])
+        if actual_arr_col is not None:
+            future_mask = (excel2_df['_date'] == tomorrow) & (excel2_df[actual_arr_col].isna() | (excel2_df[actual_arr_col].astype(str).str.strip() == ""))
+        else:
+            future_mask = (excel2_df['_date'] == tomorrow)
+        future_df = excel2_df[future_mask].copy()
+        future_locations = set()
+        for _, row in future_df.iterrows():
+            dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
+            arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
+            if dep:
+                future_locations.add(dep)
+            if arr:
+                future_locations.add(arr)
+        future_list = sorted(future_locations)
+        s5_value = '、'.join(future_list) + '/通航运输' if future_list else '/通航运输'
+        ws.cell(row=5, column=19).value = s5_value      # S5
+    else:
+        ws.cell(row=5, column=19).value = "/通航运输"
+
+    # ========== 原有逻辑（第3行汇总数据）保持不变 ==========
+    # J3（第3行第10列）
     ws.cell(row=3, column=10).value = format_duration(total_minutes)  # J3
-    ws.cell(row=3, column=11).value = len(valid_df)                  # K3
+    ws.cell(row=3, column=11).value = total_flights                  # K3
 
     old_l3 = ws.cell(row=3, column=12).value
     old_minutes = parse_duration(old_l3) if old_l3 is not None else 0
-    new_total = old_minutes + total_minutes
-    ws.cell(row=3, column=12).value = format_duration(new_total)     # L3
+    new_total_minutes = old_minutes + total_minutes
+    ws.cell(row=3, column=12).value = format_duration(new_total_minutes)  # L3
 
-    # ---------- 修改部分：M3 同时判断调机飞行和公务飞行 ----------
+    # M3（第3行第13列）- 调机/公务判断
     has_diaoji = False
     has_gongwu = False
     if purpose_col and not valid_df.empty:
@@ -131,21 +213,16 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
             if "调机" in purpose_str or "维修" in purpose_str:
                 has_diaoji = True
             else:
-                # 其他用途视为公务飞行（载客、共享租赁等）
                 has_gongwu = True
-
-    # 组合M3内容
     m3_parts = []
     if has_gongwu:
         m3_parts.append("公务飞行")
     if has_diaoji:
         m3_parts.append("调机飞行")
-    # 如果没有任何用途（极少情况），默认填公务飞行
     m3_value = "、".join(m3_parts) if m3_parts else "公务飞行"
     ws.cell(row=3, column=13).value = m3_value                      # M3
-    # ---------- 修改结束 ----------
 
-    # N3：收集所有出发城市和到达城市，去重后顿号连接
+    # N3（第3行第14列）- 运行地点（不带后缀）
     locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -157,15 +234,17 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     location_list = sorted(locations)
     ws.cell(row=3, column=14).value = '、'.join(location_list)        # N3
 
+    # O3（第3行第15列）
     reg_series = valid_df[reg_col].dropna()
     ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())  # O3
 
+    # 统计信息（用于前端显示）
     stats = {
         '昨日飞行时间': format_duration(total_minutes),
-        '架次': len(valid_df),
+        '架次': total_flights,
         '注册号数量': len(reg_series.astype(str).unique()),
         '截止昨日总飞行时间': format_duration(old_minutes),
-        '截止今日总飞行时间': format_duration(new_total),
+        '截止今日总飞行时间': format_duration(new_total_minutes),
     }
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
