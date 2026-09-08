@@ -107,16 +107,22 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    # ---- 1. 修改 H2 和 I2 的日期部分（只改日期，保留其他文本和格式） ----
+    # ---- 1. 修改 H2 和 I2 的日期部分（只改日期，字体设为红色以保持原样式） ----
+    from openpyxl.styles import Font
+
     h2_val = ws.cell(row=2, column=8).value
     if h2_val and isinstance(h2_val, str):
         new_h2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", h2_val)
-        ws.cell(row=2, column=8).value = new_h2
+        cell = ws.cell(row=2, column=8)
+        cell.value = new_h2
+        cell.font = Font(color='FF0000')  # 设为红色，与原日期颜色一致
 
     i2_val = ws.cell(row=2, column=9).value
     if i2_val and isinstance(i2_val, str):
         new_i2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", i2_val)
-        ws.cell(row=2, column=9).value = new_i2
+        cell = ws.cell(row=2, column=9)
+        cell.value = new_i2
+        cell.font = Font(color='FF0000')  # 设为红色
 
     # ---- 2. 筛选有效航段（有飞行时间） ----
     valid_mask = excel2_df[flight_col].notna()
