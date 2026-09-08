@@ -99,7 +99,8 @@ def format_time(value):
 # ==============================
 # 功能 A：每日飞行数据自动更新
 # ==============================
-def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col):
+def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col,
+                  future_df=None, dep_col_future=None, arr_col_future=None):
     wb = load_workbook(excel1_path)
     ws = wb.active
 
@@ -170,20 +171,12 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)  # N5
 
-    # ---- 8. S5：次日计划运行地点 ----
-    date_col = auto_match_column(excel2_df, ["出发日期", "起飞日期", "计划日期"])
-    if date_col is not None:
-        excel2_df['_date'] = pd.to_datetime(excel2_df[date_col]).dt.date
-        actual_arr_col = auto_match_column(excel2_df, ["实际到达", "到达时间"])
-        if actual_arr_col is not None:
-            future_mask = (excel2_df['_date'] == tomorrow) & (excel2_df[actual_arr_col].isna() | (excel2_df[actual_arr_col].astype(str).str.strip() == ""))
-        else:
-            future_mask = (excel2_df['_date'] == tomorrow)
-        future_df = excel2_df[future_mask].copy()
+    # ---- 8. S5：次日计划运行地点（使用专门上传的 future_df） ----
+    if future_df is not None and dep_col_future is not None and arr_col_future is not None:
         future_locations = set()
         for _, row in future_df.iterrows():
-            dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
-            arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
+            dep = str(row[dep_col_future]).strip() if pd.notna(row[dep_col_future]) else ''
+            arr = str(row[arr_col_future]).strip() if pd.notna(row[arr_col_future]) else ''
             if dep:
                 future_locations.add(dep)
             if arr:
@@ -192,6 +185,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         s5_value = '、'.join(future_list) + '/通航运输' if future_list else '/通航运输'
         ws.cell(row=5, column=19).value = s5_value      # S5
     else:
+        # 如果没有次日计划数据，保留原有内容或置空
         ws.cell(row=5, column=19).value = "/通航运输"
 
     # ========== 原有逻辑（第3行汇总数据）保持不变 ==========
