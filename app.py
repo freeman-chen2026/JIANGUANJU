@@ -97,10 +97,9 @@ def format_time(value):
     return str(value)
 
 # ==============================
-# 功能 A：每日飞行数据自动更新
+# 功能 A：每日飞行数据自动更新（含第2行、第5行及次日计划S5列）
 # ==============================
-def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col,
-                  future_df=None, dep_col_future=None, arr_col_future=None):
+def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col, future_df=None):
     wb = load_workbook(excel1_path)
     ws = wb.active
 
@@ -171,12 +170,13 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)  # N5
 
-    # ---- 8. S5：次日计划运行地点（使用专门上传的 future_df） ----
-    if future_df is not None and dep_col_future is not None and arr_col_future is not None:
+    # ---- 8. S5：次日计划运行地点（使用传入的 future_df） ----
+    if future_df is not None and not future_df.empty:
+        # 从 future_df 中提取出发城市和到达城市
         future_locations = set()
         for _, row in future_df.iterrows():
-            dep = str(row[dep_col_future]).strip() if pd.notna(row[dep_col_future]) else ''
-            arr = str(row[arr_col_future]).strip() if pd.notna(row[arr_col_future]) else ''
+            dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
+            arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
             if dep:
                 future_locations.add(dep)
             if arr:
@@ -185,8 +185,8 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         s5_value = '、'.join(future_list) + '/通航运输' if future_list else '/通航运输'
         ws.cell(row=5, column=19).value = s5_value      # S5
     else:
-        # 如果没有次日计划数据，保留原有内容或置空
-        ws.cell(row=5, column=19).value = "/通航运输"
+        # 如果没有提供次日计划数据，S5 留空
+        ws.cell(row=5, column=19).value = ""            # S5
 
     # ========== 原有逻辑（第3行汇总数据）保持不变 ==========
     # J3（第3行第10列）
@@ -245,9 +245,11 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     wb.save(tmp.name)
     return tmp.name, stats
 
+
 def run_feature_a():
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
+    excel3_file = st.file_uploader("📂 上传：次日计划航段数据导出（可选，用于S5列）", type=["xlsx", "xlsm"], key="a_excel3")
 
     if excel1_file and excel2_file:
         with st.spinner("正在自动处理..."):
@@ -274,12 +276,21 @@ def run_feature_a():
                     st.error(f"未能自动匹配以下列：{', '.join(missing)}，请检查文件列名是否包含关键词。")
                     return
 
+                # 读取次日计划数据（可选）
+                future_df = None
+                if excel3_file is not None:
+                    future_df = read_excel_with_auto_header(excel3_file, keywords)
+                    if future_df.empty:
+                        st.warning("次日计划文件为空或格式不正确，S5列将不填充。")
+                        future_df = None
+
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp1:
                     tmp1.write(excel1_file.getvalue())
                     excel1_path = tmp1.name
 
                 output_path, stats = update_excel1(
-                    excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col
+                    excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col,
+                    future_df=future_df
                 )
 
                 st.success("✅ 处理完成")
@@ -312,7 +323,6 @@ def run_feature_a():
                     os.unlink(excel1_path)
                 if 'output_path' in locals() and os.path.exists(output_path):
                     os.unlink(output_path)
-
 # ==============================
 # 功能 B：模板生成备案表
 # ==============================
