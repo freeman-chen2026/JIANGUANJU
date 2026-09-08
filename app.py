@@ -97,7 +97,7 @@ def format_time(value):
     return str(value)
 
 # ==============================
-# 功能 A：每日飞行数据自动更新（含第2行、第5行及次日计划S5列）
+# 功能 A：每日飞行数据自动更新（仅修改第2行日期和第5行数据，不改第3行）
 # ==============================
 def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col, future_df=None):
     wb = load_workbook(excel1_path)
@@ -107,10 +107,16 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    # ========== 新增：第5行和第2行的数据更新 ==========
-    # ---- 1. 更新 H2 和 I2 的日期 ----
-    ws.cell(row=2, column=8).value = f"{yesterday.month}月{yesterday.day}日\n总飞行时间"
-    ws.cell(row=2, column=9).value = f"{yesterday.month}月{yesterday.day}日\n飞行架次"
+    # ---- 1. 修改 H2 和 I2 的日期部分（只改日期，保留其他文本和格式） ----
+    h2_val = ws.cell(row=2, column=8).value
+    if h2_val and isinstance(h2_val, str):
+        new_h2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", h2_val)
+        ws.cell(row=2, column=8).value = new_h2
+
+    i2_val = ws.cell(row=2, column=9).value
+    if i2_val and isinstance(i2_val, str):
+        new_i2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", i2_val)
+        ws.cell(row=2, column=9).value = new_i2
 
     # ---- 2. 筛选有效航段（有飞行时间） ----
     valid_mask = excel2_df[flight_col].notna()
@@ -131,14 +137,14 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     # ---- 4. J5 累计时间 ----
     old_j5 = ws.cell(row=5, column=10).value
     if old_j5 is None or old_j5 == "":
-        old_j5 = 0.0
+        old_j5_float = 0.0
     else:
         try:
-            old_j5 = float(old_j5)
+            old_j5_float = float(old_j5)
         except:
-            old_j5 = 0.0
-    new_j5 = old_j5 + total_hours
-    ws.cell(row=5, column=10).value = f"{new_j5:.2f}"   # J5
+            old_j5_float = 0.0
+    new_j5_float = old_j5_float + total_hours
+    ws.cell(row=5, column=10).value = f"{new_j5_float:.2f}"   # J5
 
     # ---- 5. K5 累计架次 ----
     old_k5 = ws.cell(row=5, column=11).value
@@ -152,7 +158,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     new_k5 = old_k5 + total_flights
     ws.cell(row=5, column=11).value = new_k5            # K5
 
-    # ---- 6. M5：运行地点（有效航段去重） ----
+    # ---- 6. M5：运行地点 ----
     m5_locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -170,9 +176,8 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)  # N5
 
-    # ---- 8. S5：次日计划运行地点（使用传入的 future_df） ----
+    # ---- 8. S5：次日计划运行地点 ----
     if future_df is not None and not future_df.empty:
-        # 从 future_df 中提取出发城市和到达城市
         future_locations = set()
         for _, row in future_df.iterrows():
             dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -185,60 +190,15 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         s5_value = '、'.join(future_list) + '/通航运输' if future_list else '/通航运输'
         ws.cell(row=5, column=19).value = s5_value      # S5
     else:
-        # 如果没有提供次日计划数据，S5 留空
         ws.cell(row=5, column=19).value = ""            # S5
 
-    # ========== 原有逻辑（第3行汇总数据）保持不变 ==========
-    # J3（第3行第10列）
-    ws.cell(row=3, column=10).value = format_duration(total_minutes)  # J3
-    ws.cell(row=3, column=11).value = total_flights                  # K3
-
-    old_l3 = ws.cell(row=3, column=12).value
-    old_minutes = parse_duration(old_l3) if old_l3 is not None else 0
-    new_total_minutes = old_minutes + total_minutes
-    ws.cell(row=3, column=12).value = format_duration(new_total_minutes)  # L3
-
-    # M3（第3行第13列）- 调机/公务判断
-    has_diaoji = False
-    has_gongwu = False
-    if purpose_col and not valid_df.empty:
-        for val in valid_df[purpose_col].dropna():
-            purpose_str = str(val).strip()
-            if "调机" in purpose_str or "维修" in purpose_str:
-                has_diaoji = True
-            else:
-                has_gongwu = True
-    m3_parts = []
-    if has_gongwu:
-        m3_parts.append("公务飞行")
-    if has_diaoji:
-        m3_parts.append("调机飞行")
-    m3_value = "、".join(m3_parts) if m3_parts else "公务飞行"
-    ws.cell(row=3, column=13).value = m3_value                      # M3
-
-    # N3（第3行第14列）- 运行地点（不带后缀）
-    locations = set()
-    for _, row in valid_df.iterrows():
-        dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
-        arr = str(row[arr_col]).strip() if pd.notna(row[arr_col]) else ''
-        if dep:
-            locations.add(dep)
-        if arr:
-            locations.add(arr)
-    location_list = sorted(locations)
-    ws.cell(row=3, column=14).value = '、'.join(location_list)        # N3
-
-    # O3（第3行第15列）
-    reg_series = valid_df[reg_col].dropna()
-    ws.cell(row=3, column=15).value = len(reg_series.astype(str).unique())  # O3
-
-    # 统计信息（用于前端显示）
+    # ========== 统计信息（基于第5行，用于页面显示） ==========
     stats = {
-        '昨日飞行时间': format_duration(total_minutes),
+        '昨日飞行时间': total_hours_str,
         '架次': total_flights,
-        '注册号数量': len(reg_series.astype(str).unique()),
-        '截止昨日总飞行时间': format_duration(old_minutes),
-        '截止今日总飞行时间': format_duration(new_total_minutes),
+        '注册号数量': len(unique_regs),
+        '截止昨日总飞行时间': f"{old_j5_float:.2f}",
+        '截止今日总飞行时间': f"{new_j5_float:.2f}",
     }
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
