@@ -99,30 +99,48 @@ def format_time(value):
 # ==============================
 # 功能 A：每日飞行数据自动更新（仅修改第2行日期和第5行数据，不改第3行）
 # ==============================
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+
+
+def update_cell_date_only(cell, new_date_str):
+    """只替换单元格中的日期部分（如 9月7日 → 9月8日），保留其他文本和样式"""
+    val = cell.value
+    if val is None:
+        return
+
+    if isinstance(val, CellRichText):
+        # 富文本：逐块替换，保留每块的字体样式
+        new_blocks = []
+        for block in val:
+            if isinstance(block, TextBlock):
+                new_text = re.sub(r'\d+月\d+日', new_date_str, block.text)
+                if new_text != block.text:
+                    new_blocks.append(TextBlock(block.font, new_text))
+                else:
+                    new_blocks.append(block)
+            else:
+                new_text = re.sub(r'\d+月\d+日', new_date_str, str(block))
+                new_blocks.append(new_text)
+        cell.value = CellRichText(new_blocks)
+    else:
+        # 普通字符串：直接替换
+        new_val = re.sub(r'\d+月\d+日', new_date_str, str(val))
+        cell.value = new_val
+
+
 def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col, future_df=None):
-    wb = load_workbook(excel1_path)
+    # 关键：启用富文本解析，才能保留单元格内的颜色
+    wb = load_workbook(excel1_path, rich_text=True)
     ws = wb.active
 
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
     tomorrow = today + timedelta(days=1)
 
-    # ---- 1. 修改 H2 和 I2 的日期部分（只改日期，字体设为红色以保持原样式） ----
-    from openpyxl.styles import Font
-
-    h2_val = ws.cell(row=2, column=8).value
-    if h2_val and isinstance(h2_val, str):
-        new_h2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", h2_val)
-        cell = ws.cell(row=2, column=8)
-        cell.value = new_h2
-        cell.font = Font(color='FF0000')  # 设为红色，与原日期颜色一致
-
-    i2_val = ws.cell(row=2, column=9).value
-    if i2_val and isinstance(i2_val, str):
-        new_i2 = re.sub(r'\d+月\d+日', f"{yesterday.month}月{yesterday.day}日", i2_val)
-        cell = ws.cell(row=2, column=9)
-        cell.value = new_i2
-        cell.font = Font(color='FF0000')  # 设为红色
+    # ---- 1. 只修改 H2、I2 中的日期，其他不变 ----
+    new_date_str = f"{yesterday.month}月{yesterday.day}日"
+    update_cell_date_only(ws.cell(row=2, column=8), new_date_str)
+    update_cell_date_only(ws.cell(row=2, column=9), new_date_str)
 
     # ---- 2. 筛选有效航段（有飞行时间） ----
     valid_mask = excel2_df[flight_col].notna()
@@ -198,7 +216,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     else:
         ws.cell(row=5, column=19).value = ""            # S5
 
-    # ========== 统计信息（基于第5行，用于页面显示） ==========
+    # ========== 统计信息 ==========
     stats = {
         '昨日飞行时间': total_hours_str,
         '架次': total_flights,
@@ -270,7 +288,8 @@ def run_feature_a():
                 col5.metric("截止今日总飞行时间", stats['截止今日总飞行时间'])
 
                 yesterday = datetime.now().date() - timedelta(days=1)
-                file_name = f"中南-深圳局-天成商务航空有限公司-{yesterday.month}月{yesterday.day}日飞行数据.xlsx"
+                # ===== 文件名改为“飞行计划日报” =====
+                file_name = f"中南-深圳局-天成商务航空有限公司-{yesterday.month}月{yesterday.day}日飞行计划日报.xlsx"
 
                 with open(output_path, 'rb') as f:
                     st.download_button(
