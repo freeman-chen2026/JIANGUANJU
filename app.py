@@ -109,7 +109,6 @@ def update_cell_date_only(cell, new_date_str):
         return
 
     if isinstance(val, CellRichText):
-        # 富文本：逐块替换，保留每块的字体样式
         new_blocks = []
         for block in val:
             if isinstance(block, TextBlock):
@@ -123,26 +122,29 @@ def update_cell_date_only(cell, new_date_str):
                 new_blocks.append(new_text)
         cell.value = CellRichText(new_blocks)
     else:
-        # 普通字符串：直接替换
         new_val = re.sub(r'\d+月\d+日', new_date_str, str(val))
         cell.value = new_val
 
 
 def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col, purpose_col, future_df=None):
-    # 关键：启用富文本解析，才能保留单元格内的颜色
     wb = load_workbook(excel1_path, rich_text=True)
     ws = wb.active
 
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
+    before_yesterday = today - timedelta(days=2)
     tomorrow = today + timedelta(days=1)
 
-    # ---- 1. 只修改 H2、I2 中的日期，其他不变 ----
     new_date_str = f"{yesterday.month}月{yesterday.day}日"
+
+    # ---- 0. 修改 A1 标题中的日期 ----
+    update_cell_date_only(ws.cell(row=1, column=1), new_date_str)
+
+    # ---- 1. 修改 H2、I2 中的日期 ----
     update_cell_date_only(ws.cell(row=2, column=8), new_date_str)
     update_cell_date_only(ws.cell(row=2, column=9), new_date_str)
 
-    # ---- 2. 筛选有效航段（有飞行时间） ----
+    # ---- 2. 筛选有效航段 ----
     valid_mask = excel2_df[flight_col].notna()
     valid_df = excel2_df[valid_mask].copy()
 
@@ -155,8 +157,8 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     total_flights = len(valid_df)
 
     # ---- 3. 写入 H5 和 I5 ----
-    ws.cell(row=5, column=8).value = total_hours_str   # H5
-    ws.cell(row=5, column=9).value = total_flights     # I5
+    ws.cell(row=5, column=8).value = total_hours_str
+    ws.cell(row=5, column=9).value = total_flights
 
     # ---- 4. J5 累计时间 ----
     old_j5 = ws.cell(row=5, column=10).value
@@ -168,7 +170,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         except:
             old_j5_float = 0.0
     new_j5_float = old_j5_float + total_hours
-    ws.cell(row=5, column=10).value = f"{new_j5_float:.2f}"   # J5
+    ws.cell(row=5, column=10).value = f"{new_j5_float:.2f}"
 
     # ---- 5. K5 累计架次 ----
     old_k5 = ws.cell(row=5, column=11).value
@@ -180,9 +182,9 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         except:
             old_k5 = 0
     new_k5 = old_k5 + total_flights
-    ws.cell(row=5, column=11).value = new_k5            # K5
+    ws.cell(row=5, column=11).value = new_k5
 
-    # ---- 6. M5：运行地点 ----
+    # ---- 6. M5：昨日运行地点 ----
     m5_locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -193,14 +195,15 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
             m5_locations.add(arr)
     m5_list = sorted(m5_locations)
     m5_value = '、'.join(m5_list) + '/通航运输' if m5_list else '/通航运输'
-    ws.cell(row=5, column=13).value = m5_value          # M5
+    ws.cell(row=5, column=13).value = m5_value
 
     # ---- 7. N5：使用航空器数量 ----
     reg_series_valid = valid_df[reg_col].dropna()
     unique_regs = reg_series_valid.astype(str).unique()
-    ws.cell(row=5, column=14).value = len(unique_regs)  # N5
+    ws.cell(row=5, column=14).value = len(unique_regs)
 
     # ---- 8. S5：次日计划运行地点 ----
+    future_display = ""
     if future_df is not None and not future_df.empty:
         future_locations = set()
         for _, row in future_df.iterrows():
@@ -212,17 +215,20 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
                 future_locations.add(arr)
         future_list = sorted(future_locations)
         s5_value = '、'.join(future_list) + '/通航运输' if future_list else '/通航运输'
-        ws.cell(row=5, column=19).value = s5_value      # S5
+        ws.cell(row=5, column=19).value = s5_value
+        future_display = '、'.join(future_list) if future_list else ""
     else:
-        ws.cell(row=5, column=19).value = ""            # S5
+        ws.cell(row=5, column=19).value = ""
 
     # ========== 统计信息 ==========
     stats = {
         '昨日飞行时间': total_hours_str,
         '架次': total_flights,
         '注册号数量': len(unique_regs),
-        '截止昨日总飞行时间': f"{old_j5_float:.2f}",
-        '截止今日总飞行时间': f"{new_j5_float:.2f}",
+        f'截止{before_yesterday.month}月{before_yesterday.day}日总飞行时间': f"{old_j5_float:.2f}",
+        f'截止{yesterday.month}月{yesterday.day}日总飞行时间': f"{new_j5_float:.2f}",
+        '昨日运行地点': '、'.join(m5_list) if m5_list else "",
+        '次日运行地点': future_display,
     }
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
@@ -233,7 +239,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
 def run_feature_a():
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
-    excel3_file = st.file_uploader("📂 上传：次日计划航段数据导出（可选，用于S5列）", type=["xlsx", "xlsm"], key="a_excel3")
+    excel3_file = st.file_uploader("📂 上传：航段数据导出（次日）（用于填入次日飞行计划运行地点）", type=["xlsx", "xlsm"], key="a_excel3")
 
     if excel1_file and excel2_file:
         with st.spinner("正在自动处理..."):
@@ -278,17 +284,31 @@ def run_feature_a():
                 )
 
                 st.success("✅ 处理完成")
+
+                # ---- 显示核心指标 ----
                 col1, col2, col3 = st.columns(3)
                 col1.metric("昨日总飞行时间", stats['昨日飞行时间'])
                 col2.metric("架次", stats['架次'])
                 col3.metric("使用航空器数量", stats['注册号数量'])
 
+                # 获取动态日期标签
+                date_labels = [k for k in stats.keys() if k.startswith('截止')]
                 col4, col5 = st.columns(2)
-                col4.metric("截止昨日总飞行时间", stats['截止昨日总飞行时间'])
-                col5.metric("截止今日总飞行时间", stats['截止今日总飞行时间'])
+                col4.metric(date_labels[0], stats[date_labels[0]])
+                col5.metric(date_labels[1], stats[date_labels[1]])
+
+                # ---- 显示运行地点 ----
+                st.subheader("📍 运行地点")
+                if stats['昨日运行地点']:
+                    st.write(f"**昨日运行地点：** {stats['昨日运行地点']}")
+                else:
+                    st.write("**昨日运行地点：** 无")
+                if stats['次日运行地点']:
+                    st.write(f"**次日运行地点：** {stats['次日运行地点']}")
+                else:
+                    st.write("**次日运行地点：** （未上传次日计划文件）")
 
                 yesterday = datetime.now().date() - timedelta(days=1)
-                # ===== 文件名改为“飞行计划日报” =====
                 file_name = f"中南-深圳局-天成商务航空有限公司-{yesterday.month}月{yesterday.day}日飞行计划日报.xlsx"
 
                 with open(output_path, 'rb') as f:
