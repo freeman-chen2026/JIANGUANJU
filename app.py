@@ -227,6 +227,8 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         '注册号数量': len(unique_regs),
         f'截止{before_yesterday.month}月{before_yesterday.day}日总飞行时间': f"{old_j5_float:.2f}",
         f'截止{yesterday.month}月{yesterday.day}日总飞行时间': f"{new_j5_float:.2f}",
+        f'截止{before_yesterday.month}月{before_yesterday.day}日总飞行架次': old_k5,
+        f'截止{yesterday.month}月{yesterday.day}日总飞行架次': new_k5,
         '昨日运行地点': '、'.join(m5_list) if m5_list else "",
         '次日运行地点': future_display,
     }
@@ -291,11 +293,17 @@ def run_feature_a():
                 col2.metric("架次", stats['架次'])
                 col3.metric("使用航空器数量", stats['注册号数量'])
 
-                # 获取动态日期标签
-                date_labels = [k for k in stats.keys() if k.startswith('截止')]
+                # 获取动态日期标签（时间和架次分开）
+                time_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行时间' in k]
+                flights_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行架次' in k]
+
                 col4, col5 = st.columns(2)
-                col4.metric(date_labels[0], stats[date_labels[0]])
-                col5.metric(date_labels[1], stats[date_labels[1]])
+                col4.metric(time_labels[0], stats[time_labels[0]])
+                col5.metric(time_labels[1], stats[time_labels[1]])
+
+                col6, col7 = st.columns(2)
+                col6.metric(flights_labels[0], stats[flights_labels[0]])
+                col7.metric(flights_labels[1], stats[flights_labels[1]])
 
                 # ---- 显示运行地点 ----
                 st.subheader("📍 运行地点")
@@ -304,9 +312,9 @@ def run_feature_a():
                 else:
                     st.write("**昨日运行地点：** 无")
                 if stats['次日运行地点']:
-                    st.write(f"**次日运行地点：** {stats['次日运行地点']}")
+                    st.write(f"**次日（今日）运行地点：** {stats['次日运行地点']}")
                 else:
-                    st.write("**次日运行地点：** （未上传次日计划文件）")
+                    st.write("**次日（今日）运行地点：** （未上传次日计划文件）")
 
                 yesterday = datetime.now().date() - timedelta(days=1)
                 file_name = f"中南-深圳局-天成商务航空有限公司-{yesterday.month}月{yesterday.day}日飞行计划日报.xlsx"
