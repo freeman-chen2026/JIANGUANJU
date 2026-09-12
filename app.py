@@ -133,16 +133,17 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     today = datetime.now().date()
     yesterday = today - timedelta(days=1)
     before_yesterday = today - timedelta(days=2)
-    tomorrow = today + timedelta(days=1)
 
-    new_date_str = f"{yesterday.month}月{yesterday.day}日"
+    # ---- 日期字符串 ----
+    today_str = f"{today.month}月{today.day}日"           # 今日（用于 A1、文件名）
+    yesterday_str = f"{yesterday.month}月{yesterday.day}日"  # 昨日（用于 H2/I2 数据日期）
 
-    # ---- 0. 修改 A1 标题中的日期 ----
-    update_cell_date_only(ws.cell(row=1, column=1), new_date_str)
+    # ---- 0. 修改 A1 标题中的日期为【今日】 ----
+    update_cell_date_only(ws.cell(row=1, column=1), today_str)
 
-    # ---- 1. 修改 H2、I2 中的日期 ----
-    update_cell_date_only(ws.cell(row=2, column=8), new_date_str)
-    update_cell_date_only(ws.cell(row=2, column=9), new_date_str)
+    # ---- 1. 修改 H2、I2 中的日期为【昨日】（数据日期） ----
+    update_cell_date_only(ws.cell(row=2, column=8), yesterday_str)
+    update_cell_date_only(ws.cell(row=2, column=9), yesterday_str)
 
     # ---- 2. 筛选有效航段 ----
     valid_mask = excel2_df[flight_col].notna()
@@ -202,7 +203,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)
 
-    # ---- 8. S5：次日计划运行地点 ----
+    # ---- 8. S5：次日（明日）计划运行地点 ----
     future_display = ""
     if future_df is not None and not future_df.empty:
         future_locations = set()
@@ -241,7 +242,11 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
 def run_feature_a():
     excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = st.file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
-    excel3_file = st.file_uploader("📂 上传：航段数据导出（次日）（用于填入次日飞行计划运行地点）", type=["xlsx", "xlsm"], key="a_excel3")
+    excel3_file = st.file_uploader(
+        "📂 上传：航段数据导出（今天次日，比如今日12号，上传13号的航段数据）（用于填入次日飞行计划运行地点）",
+        type=["xlsx", "xlsm"],
+        key="a_excel3"
+    )
 
     if excel1_file and excel2_file:
         with st.spinner("正在自动处理..."):
@@ -293,7 +298,7 @@ def run_feature_a():
                 col2.metric("架次", stats['架次'])
                 col3.metric("使用航空器数量", stats['注册号数量'])
 
-                # 获取动态日期标签（时间和架次分开）
+                # 截止时间指标
                 time_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行时间' in k]
                 flights_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行架次' in k]
 
@@ -312,12 +317,13 @@ def run_feature_a():
                 else:
                     st.write("**昨日运行地点：** 无")
                 if stats['次日运行地点']:
-                    st.write(f"**次日（今日）运行地点：** {stats['次日运行地点']}")
+                    st.write(f"**次日运行地点：** {stats['次日运行地点']}")
                 else:
-                    st.write("**次日（今日）运行地点：** （未上传次日计划文件）")
+                    st.write("**次日运行地点：** （未上传次日计划文件）")
 
-                yesterday = datetime.now().date() - timedelta(days=1)
-                file_name = f"中南-深圳局-天成商务航空有限公司-{yesterday.month}月{yesterday.day}日飞行计划日报.xlsx"
+                # ===== 文件名使用今日日期 =====
+                today = datetime.now().date()
+                file_name = f"中南-深圳局-天成商务航空有限公司-{today.month}月{today.day}日飞行计划日报.xlsx"
 
                 with open(output_path, 'rb') as f:
                     st.download_button(
