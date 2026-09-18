@@ -3548,7 +3548,7 @@ def run_feature_wx_mail():
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== Tab 栏固定顶部 + 前4个一行、后5个一行 =====
+# ===== Tab 栏固定顶部 + 前4个一行、后5个一行，左对齐 =====
 st.markdown("""
 <style>
 /* Tab 栏固定在顶部 */
@@ -3561,25 +3561,23 @@ div[data-testid="stTabs"] > div:first-child {
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-/* Tab 容器换行 */
+/* Tab 容器：换行 + 左对齐 */
 div[data-testid="stTabs"] div[role="tablist"] {
     display: flex !important;
     flex-wrap: wrap !important;
+    justify-content: flex-start !important;
     gap: 4px !important;
     overflow-x: visible !important;
     white-space: normal !important;
 }
-/* 前4个 Tab：各占 25% */
-div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(-n+4) {
-    flex: 1 1 calc(25% - 4px) !important;
-    max-width: calc(25% - 4px) !important;
+/* Tab 按内容宽度自适应，不拉伸 */
+div[data-testid="stTabs"] div[role="tablist"] > * {
+    flex: 0 0 auto !important;
     margin-bottom: 4px !important;
 }
-/* 第5个及以后：各占 20% */
-div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(n+5) {
-    flex: 1 1 calc(20% - 4px) !important;
-    max-width: calc(20% - 4px) !important;
-    margin-bottom: 4px !important;
+/* 第4个 Tab 之后强制换行 */
+div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4) {
+    margin-right: 100% !important;
 }
 </style>
 """, unsafe_allow_html=True)
