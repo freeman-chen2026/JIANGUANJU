@@ -3537,13 +3537,13 @@ st.title("监控+计划")
 tabs = st.tabs([
     "✉️ WX邮件生成",
     "📝 检查单&填写脚本",
+    "🌐 世界时行程",
+    "✈️ 航路处理",
     "📋 每日飞行数据-10：00发",
     "📄 每日通航运行情况跟踪表-16：30发",
     "📊 天成商务航空每日运行跟踪-16：30发",
     "📜 通航脚本",
-    "📊 值班连班统计",
-    "🌐 世界时行程",
-    "✈️ 航路处理"
+    "📊 值班连班统计"
 ])
 
 with tabs[0]:
@@ -3551,18 +3551,18 @@ with tabs[0]:
 with tabs[1]:
     run_feature_chk()
 with tabs[2]:
-    run_feature_a()
-with tabs[3]:
-    run_feature_b()
-with tabs[4]:
-    run_feature_c()
-with tabs[5]:
-    run_feature_d()
-with tabs[6]:
-    run_feature_e()
-with tabs[7]:
     run_feature_f()
-with tabs[8]:
+with tabs[3]:
     run_feature_g()
+with tabs[4]:
+    run_feature_a()
+with tabs[5]:
+    run_feature_b()
+with tabs[6]:
+    run_feature_c()
+with tabs[7]:
+    run_feature_d()
+with tabs[8]:
+    run_feature_e()
 
-st.caption("💡 邮件生成每天多次用，检查单+脚本自动填表；其余 7 个功能保持不变。")
+st.caption("💡 邮件生成每天多次用，检查单+脚本自动填表，世界时行程和航路处理常驻第3-4位；其余功能保持不变。")
