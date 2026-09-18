@@ -3548,7 +3548,6 @@ def run_feature_wx_mail():
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== Tab 栏固定顶部 + 前4个一行、后5个一行，左对齐 =====
 st.markdown("""
 <style>
 /* Tab 栏固定在顶部 */
@@ -3557,27 +3556,42 @@ div[data-testid="stTabs"] > div:first-child {
     top: 0;
     z-index: 999999;
     background: white;
-    padding-top: 8px;
-    padding-bottom: 8px;
+    padding: 8px 0;
     border-bottom: 1px solid #eee;
+    overflow: visible !important;
 }
-/* 用 grid 强制 4 列：前4个排第一行，第5个自动换到第二行 */
-div[data-baseweb="tab-list"] {
+/* 所有相关容器都允许显示溢出 */
+div[data-testid="stTabs"],
+div[data-testid="stTabs"] > div,
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+    flex-wrap: wrap !important;
+}
+/* 用 Grid 强制 4 列：前4个一行，第5个自动到第二行 */
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
     display: grid !important;
     grid-template-columns: repeat(4, max-content) !important;
-    justify-content: start !important;
-    column-gap: 12px !important;
+    grid-auto-flow: row !important;
+    column-gap: 20px !important;
     row-gap: 6px !important;
+    justify-content: start !important;
+    align-items: center !important;
+    white-space: normal !important;
     overflow-x: visible !important;
-    flex-wrap: unset !important;
 }
-/* 隐藏 grid 里的装饰元素，避免占位错乱 */
-div[data-baseweb="tab-list"] > div:not([role="tab"]) {
+/* 每个 Tab 按内容宽度 */
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] > button,
+div[data-testid="stTabs"] div[data-baseweb="tab-list"] > * {
+    flex: unset !important;
+    width: auto !important;
+    max-width: none !important;
+}
+/* 隐藏 Streamlit 的滚动指示器箭头 */
+div[data-testid="stTabs"] button[aria-label="Scroll left"],
+div[data-testid="stTabs"] button[aria-label="Scroll right"] {
     display: none !important;
-}
-/* 每个 tab 按内容宽度 */
-div[data-baseweb="tab-list"] > *[role="tab"] {
-    flex: 0 0 auto !important;
 }
 </style>
 """, unsafe_allow_html=True)
