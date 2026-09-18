@@ -2902,7 +2902,22 @@ def run_feature_chk():
         return
 
     try:
-        chk_df = pd.read_excel(chk_file, sheet_name=0)
+        # 先读成无标题格式，自动定位标题行
+        chk_raw = pd.read_excel(chk_file, sheet_name=0, header=None)
+        chk_header_idx = None
+        for i in range(min(len(chk_raw), 10)):
+            vals = [str(v).strip() for v in chk_raw.iloc[i].values if pd.notna(v)]
+            if '飞机注册号' in vals and '出发地' in vals and '到达地' in vals:
+                chk_header_idx = i
+                break
+
+        if chk_header_idx is None:
+            st.error("未在文件中找到标题行（需包含：飞机注册号、出发地、到达地）")
+            return
+
+        chk_df = chk_raw.iloc[chk_header_idx + 1:].copy()
+        chk_df.columns = [str(v).strip() for v in chk_raw.iloc[chk_header_idx].values]
+        chk_df = chk_df.reset_index(drop=True)
     except Exception as e:
         st.error(f"读取文件失败：{e}")
         return
