@@ -3547,6 +3547,35 @@ def run_feature_wx_mail():
 # 主界面
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
+
+# ===== 让 Tab 栏固定顶部 + 支持换行 =====
+st.markdown("""
+<style>
+/* Tab 栏固定在顶部 */
+div[data-testid="stTabs"] > div:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    background: white;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eee;
+}
+/* Tab 标签换行显示，而不是横向滚动 */
+div[data-testid="stTabs"] div[role="tablist"] {
+    flex-wrap: wrap !important;
+    overflow-x: visible !important;
+    white-space: normal !important;
+    gap: 4px !important;
+}
+/* 每个 Tab 标签允许收缩，换行后间距正常 */
+div[data-testid="stTabs"] button[role="tab"] {
+    flex-shrink: 0;
+    margin-bottom: 4px;
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.title("监控+计划")
 
 tabs = st.tabs([
