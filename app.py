@@ -3561,26 +3561,23 @@ div[data-testid="stTabs"] > div:first-child {
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-/* Tab 容器：换行 + 左对齐 */
-div[data-testid="stTabs"] div[role="tablist"] {
-    display: flex !important;
-    flex-wrap: wrap !important;
-    justify-content: flex-start !important;
-    gap: 4px !important;
+/* 用 grid 强制 4 列：前4个排第一行，第5个自动换到第二行 */
+div[data-baseweb="tab-list"] {
+    display: grid !important;
+    grid-template-columns: repeat(4, max-content) !important;
+    justify-content: start !important;
+    column-gap: 12px !important;
+    row-gap: 6px !important;
     overflow-x: visible !important;
-    white-space: normal !important;
+    flex-wrap: unset !important;
 }
-/* Tab 按内容宽度自适应，不拉伸 */
-div[data-testid="stTabs"] div[role="tablist"] > * {
+/* 隐藏 grid 里的装饰元素，避免占位错乱 */
+div[data-baseweb="tab-list"] > div:not([role="tab"]) {
+    display: none !important;
+}
+/* 每个 tab 按内容宽度 */
+div[data-baseweb="tab-list"] > *[role="tab"] {
     flex: 0 0 auto !important;
-    margin-bottom: 4px !important;
-}
-/* 第4个 Tab 之后插入换行符，强制第5个起换到第二行 */
-div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4)::after {
-    content: '';
-    flex-basis: 100%;
-    width: 100%;
-    height: 0;
 }
 </style>
 """, unsafe_allow_html=True)
