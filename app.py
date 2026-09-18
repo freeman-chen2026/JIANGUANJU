@@ -3548,7 +3548,7 @@ def run_feature_wx_mail():
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== 让 Tab 栏固定顶部 + 支持换行 =====
+# ===== 让 Tab 栏固定顶部 + 前4个一行、后5个一行 =====
 st.markdown("""
 <style>
 /* Tab 栏固定在顶部 */
@@ -3561,16 +3561,21 @@ div[data-testid="stTabs"] > div:first-child {
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-/* Tab 标签换行显示，而不是横向滚动 */
+/* Tab 标签换行显示：前4个一行，后5个一行 */
 div[data-testid="stTabs"] div[role="tablist"] {
+    display: flex !important;
     flex-wrap: wrap !important;
-    overflow-x: visible !important;
-    white-space: normal !important;
     gap: 4px !important;
+    overflow-x: visible !important;
 }
-/* 每个 Tab 标签允许收缩，换行后间距正常 */
-div[data-testid="stTabs"] button[role="tab"] {
-    flex-shrink: 0;
+div[data-testid="stTabs"] div[role="tablist"] button[role="tab"]:nth-child(-n+4) {
+    flex: 1 1 25% !important;
+    max-width: 25% !important;
+    margin-bottom: 4px;
+}
+div[data-testid="stTabs"] div[role="tablist"] button[role="tab"]:nth-child(n+5) {
+    flex: 1 1 20% !important;
+    max-width: 20% !important;
     margin-bottom: 4px;
 }
 </style>
