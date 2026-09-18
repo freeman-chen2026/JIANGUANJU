@@ -3548,53 +3548,56 @@ def run_feature_wx_mail():
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
+# Tab 栏固定在顶部（CSS 保留）
 st.markdown("""
 <style>
-/* Tab 栏固定在顶部 */
 div[data-testid="stTabs"] > div:first-child {
     position: sticky;
     top: 0;
     z-index: 999999;
     background: white;
-    padding: 8px 0;
+    padding-top: 8px;
+    padding-bottom: 8px;
     border-bottom: 1px solid #eee;
-    overflow: visible !important;
-}
-/* 所有相关容器都允许显示溢出 */
-div[data-testid="stTabs"],
-div[data-testid="stTabs"] > div,
-div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
-    overflow: visible !important;
-    height: auto !important;
-    max-height: none !important;
-    flex-wrap: wrap !important;
-}
-/* 用 Grid 强制 4 列：前4个一行，第5个自动到第二行 */
-div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
-    display: grid !important;
-    grid-template-columns: repeat(4, max-content) !important;
-    grid-auto-flow: row !important;
-    column-gap: 20px !important;
-    row-gap: 6px !important;
-    justify-content: start !important;
-    align-items: center !important;
-    white-space: normal !important;
-    overflow-x: visible !important;
-}
-/* 每个 Tab 按内容宽度 */
-div[data-testid="stTabs"] div[data-baseweb="tab-list"] > button,
-div[data-testid="stTabs"] div[data-baseweb="tab-list"] > * {
-    flex: unset !important;
-    width: auto !important;
-    max-width: none !important;
-}
-/* 隐藏 Streamlit 的滚动指示器箭头 */
-div[data-testid="stTabs"] button[aria-label="Scroll left"],
-div[data-testid="stTabs"] button[aria-label="Scroll right"] {
-    display: none !important;
 }
 </style>
 """, unsafe_allow_html=True)
+
+# 用 JS 强制前4个一行、后5个一行
+components.html("""
+<script>
+function fixTabs() {
+    const doc = window.parent.document;
+    const selectors = [
+        '[data-testid="stTabs"] [data-baseweb="tab-list"]',
+        '[data-testid="stTabs"] [role="tablist"]'
+    ];
+    selectors.forEach(function(sel) {
+        doc.querySelectorAll(sel).forEach(function(tl) {
+            if (tl.dataset.fixedGrid === '1') return;
+            tl.dataset.fixedGrid = '1';
+            tl.style.setProperty('display', 'grid', 'important');
+            tl.style.setProperty('grid-template-columns', 'repeat(4, max-content)', 'important');
+            tl.style.setProperty('grid-auto-flow', 'row', 'important');
+            tl.style.setProperty('column-gap', '24px', 'important');
+            tl.style.setProperty('row-gap', '8px', 'important');
+            tl.style.setProperty('justify-content', 'start', 'important');
+            tl.style.setProperty('overflow', 'visible', 'important');
+            tl.style.setProperty('flex-wrap', 'wrap', 'important');
+            let p = tl.parentElement;
+            while (p && p !== doc.body) {
+                p.style.setProperty('overflow', 'visible', 'important');
+                p.style.setProperty('max-height', 'none', 'important');
+                p.style.setProperty('height', 'auto', 'important');
+                p = p.parentElement;
+            }
+        });
+    });
+}
+fixTabs();
+setInterval(fixTabs, 500);
+</script>
+""", height=0)
 
 st.title("监控+计划")
 
