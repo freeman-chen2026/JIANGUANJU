@@ -3020,10 +3020,10 @@ def run_feature_chk():
     st.success(f"✅ 成功解析 {len(chk_flights)} 条有效航段")
 
     chk_preferred = [
-        "B3926", "B8105", "B8160", "B8262", "B8292", "B8309",
+        "B3926", "B652R", "B8105", "B8160", "B8262", "B8292", "B8309",
         "N2QE", "N328LM", "N550DR", "N577QT", "N7777U", "N777ZH",
-        "T7178HT", "T7CJK", "VPCSZ", "VPCVA",
-        "B652R", "N88AY", "MLLIN", "B652Q", "B652S", "B65AP"
+        "N88AY", "T7178HT", "T7CJK", "VPCSZ", "VPCVA",
+        "B652Q", "B652S", "B65AP", "MLLIN"
     ]
     chk_priority = {ac: i for i, ac in enumerate(chk_preferred)}
     chk_default_pri = len(chk_preferred)
