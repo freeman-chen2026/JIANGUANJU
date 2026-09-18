@@ -1,9 +1,10 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from io import BytesIO
 from openpyxl import load_workbook
 from openpyxl.styles import Font, Alignment
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 import tempfile
 import os
 import re
@@ -11,6 +12,7 @@ import json
 import pdfplumber
 from collections import defaultdict
 import traceback
+from urllib.parse import quote
 
 # ==============================
 # 通用工具函数（供各功能使用）
