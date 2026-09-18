@@ -3548,35 +3548,38 @@ def run_feature_wx_mail():
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== 让 Tab 栏固定顶部 + 前4个一行、后5个一行 =====
+# ===== Tab 栏固定顶部 + 前4个一行、后5个一行 =====
 st.markdown("""
 <style>
 /* Tab 栏固定在顶部 */
 div[data-testid="stTabs"] > div:first-child {
     position: sticky;
     top: 0;
-    z-index: 999;
+    z-index: 999999;
     background: white;
     padding-top: 8px;
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-/* Tab 标签换行显示：前4个一行，后5个一行 */
+/* Tab 容器换行 */
 div[data-testid="stTabs"] div[role="tablist"] {
     display: flex !important;
     flex-wrap: wrap !important;
     gap: 4px !important;
     overflow-x: visible !important;
+    white-space: normal !important;
 }
-div[data-testid="stTabs"] div[role="tablist"] button[role="tab"]:nth-child(-n+4) {
-    flex: 1 1 25% !important;
-    max-width: 25% !important;
-    margin-bottom: 4px;
+/* 前4个 Tab：各占 25% */
+div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(-n+4) {
+    flex: 1 1 calc(25% - 4px) !important;
+    max-width: calc(25% - 4px) !important;
+    margin-bottom: 4px !important;
 }
-div[data-testid="stTabs"] div[role="tablist"] button[role="tab"]:nth-child(n+5) {
-    flex: 1 1 20% !important;
-    max-width: 20% !important;
-    margin-bottom: 4px;
+/* 第5个及以后：各占 20% */
+div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(n+5) {
+    flex: 1 1 calc(20% - 4px) !important;
+    max-width: calc(20% - 4px) !important;
+    margin-bottom: 4px !important;
 }
 </style>
 """, unsafe_allow_html=True)
