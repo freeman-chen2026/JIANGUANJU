@@ -3575,9 +3575,12 @@ div[data-testid="stTabs"] div[role="tablist"] > * {
     flex: 0 0 auto !important;
     margin-bottom: 4px !important;
 }
-/* 第4个 Tab 之后强制换行 */
-div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4) {
-    margin-right: 100% !important;
+/* 第4个 Tab 之后插入换行符，强制第5个起换到第二行 */
+div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4)::after {
+    content: '';
+    flex-basis: 100%;
+    width: 100%;
+    height: 0;
 }
 </style>
 """, unsafe_allow_html=True)
