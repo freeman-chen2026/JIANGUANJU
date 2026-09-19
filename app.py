@@ -3260,7 +3260,7 @@ console.log("📌 输入 fillNext() 填充下一条");
     st.code(chk_js, language="javascript")
 
 # ==============================
-# 功能 I：WX AND NOTAM 邮件生成（隔离刷新）
+# 功能 I：WX AND NOTAM 邮件生成（手动刷新版）
 # ==============================
 WX_PILOT_MAP = {
     "P001": "gengfan@amber-aviation.com",
@@ -3332,25 +3332,77 @@ def run_feature_wx_mail():
     if 'wx_flights' not in st.session_state:
         st.session_state.wx_flights = []
 
-    # ====== 上传和输入放在 fragment 外面，不会被自动刷新重置 ======
+    # ====== 文件上传（带缓存恢复） ======
     wx_flight_file = st.file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
+
+    if wx_flight_file is not None:
+        file_key = f"{wx_flight_file.name}_{wx_flight_file.size}"
+        if st.session_state.get("wx_file_key") != file_key:
+            try:
+                raw_bytes = wx_flight_file.read()
+                st.session_state.wx_file_raw = raw_bytes
+                st.session_state.wx_file_is_csv = wx_flight_file.name.lower().endswith('.csv')
+                st.session_state.wx_file_key = file_key
+                st.session_state.wx_file_name = wx_flight_file.name
+            except Exception as e:
+                st.error(f"缓存文件失败：{e}")
+
+    # 显示缓存状态 + 清空按钮
+    if st.session_state.get("wx_file_key"):
+        col_a, col_b = st.columns([4, 1])
+        with col_a:
+            st.success(f"✅ 已缓存文件：**{st.session_state.get('wx_file_name', '未知')}**（页面重跑后自动恢复，无需重新上传）")
+        with col_b:
+            if st.button("🗑️ 清空缓存文件", key="wx_clear_file_cache"):
+                st.session_state.wx_file_key = None
+                st.session_state.wx_file_name = None
+                st.session_state.wx_file_raw = None
+                st.session_state.wx_file_is_csv = None
+                st.rerun()
+
     wx_plan_text = st.text_area(
         "粘贴文本飞行计划", height=200, key="wx_plan_text",
         placeholder="B652Q 06:00 - 07:55\n北京大兴 - 上海虹桥\nP035,P039,C051\n\nB65AP 07:30 - 09:00\n..."
     )
 
-    if st.button("生成邮件链接", key="wx_gen_btn"):
-        if wx_flight_file is None:
-            st.error("请先上传航段表")
-        elif not wx_plan_text.strip():
-            st.error("请粘贴文本飞行计划")
-        else:
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        gen_btn = st.button("生成邮件链接", key="wx_gen_btn")
+    with col_b:
+        refresh_btn = st.button("🔄 刷新列表（更新颜色/隐藏过期）", key="wx_refresh_btn")
+
+    if gen_btn:
+        # 判断文件来源：优先用新上传的，否则用缓存的
+        has_file = False
+        raw = None
+
+        if wx_flight_file is not None:
             try:
                 if wx_flight_file.name.lower().endswith('.csv'):
                     raw = pd.read_csv(wx_flight_file, header=None, dtype=str)
                 else:
                     raw = pd.read_excel(wx_flight_file, header=None)
+                has_file = True
+            except Exception as e:
+                st.error(f"读取新上传文件失败：{e}")
+        elif st.session_state.get("wx_file_raw") is not None:
+            try:
+                from io import BytesIO as _BytesIO
+                buf = _BytesIO(st.session_state.wx_file_raw)
+                if st.session_state.get("wx_file_is_csv"):
+                    raw = pd.read_csv(buf, header=None, dtype=str)
+                else:
+                    raw = pd.read_excel(buf, header=None)
+                has_file = True
+            except Exception as e:
+                st.error(f"读取缓存文件失败：{e}")
 
+        if not has_file:
+            st.error("请先上传航段表（或缓存文件已失效，请重新上传）")
+        elif not wx_plan_text.strip():
+            st.error("请粘贴文本飞行计划")
+        else:
+            try:
                 wx_header_row = None
                 for i in range(min(len(raw), 10)):
                     vals = [str(v).strip() for v in raw.iloc[i].values if pd.notna(v)]
@@ -3366,7 +3418,7 @@ def run_feature_wx_mail():
                 wx_df2.columns = [str(v).strip() for v in raw.iloc[wx_header_row].values]
                 wx_df2 = wx_df2.reset_index(drop=True)
             except Exception as e:
-                st.error(f"读取航段表失败：{e}")
+                st.error(f"解析航段表失败：{e}")
                 st.stop()
 
             def wx_find_col(df, keywords):
@@ -3509,47 +3561,39 @@ def run_feature_wx_mail():
                 if not result:
                     st.warning("未生成任何邮件，请检查航班号和起飞时间是否与航段表一致。")
 
-    # ====== 邮件列表渲染放到 fragment 里，自动刷新不影响上面 ======
-    render_wx_mail_list()
+    # ====== 邮件列表渲染（手动刷新，无自动重跑） ======
+    if st.session_state.wx_flights:
+        wx_now_dt = wx_now()
+        shown = 0
+        to_delete = []
+        for f in st.session_state.wx_flights:
+            dep_dt = f['dep_dt']
+            if wx_now_dt >= dep_dt:
+                continue
+            shown += 1
+            three_h = dep_dt - timedelta(hours=3)
+            color = '#fff9c4' if wx_now_dt >= three_h else '#f0f0f0'
 
+            col1, col2 = st.columns([12, 1])
+            with col1:
+                st.markdown(
+                    f'<a href="{f["mailto"]}" target="_blank" style="display:block;padding:10px;'
+                    f'background:{color};border:1px solid #ccc;border-radius:4px;'
+                    f'text-decoration:none;color:#0066cc;">{f["text"]}</a>',
+                    unsafe_allow_html=True
+                )
+            with col2:
+                if st.button("✕", key=f"wx_del_{f['mail_id']}", help="删除此条"):
+                    to_delete.append(f['mail_id'])
 
-@st.fragment(run_every="10m")
-def render_wx_mail_list():
-    if not st.session_state.get('wx_flights'):
-        st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
-        return
+        if to_delete:
+            st.session_state.wx_flights = [
+                x for x in st.session_state.wx_flights if x['mail_id'] not in to_delete
+            ]
+            st.rerun()
 
-    wx_now_dt = wx_now()
-    shown = 0
-    to_delete = []
-    for f in st.session_state.wx_flights:
-        dep_dt = f['dep_dt']
-        if wx_now_dt >= dep_dt:
-            continue
-        shown += 1
-        three_h = dep_dt - timedelta(hours=3)
-        color = '#fff9c4' if wx_now_dt >= three_h else '#f0f0f0'
-
-        col1, col2 = st.columns([12, 1])
-        with col1:
-            st.markdown(
-                f'<a href="{f["mailto"]}" target="_blank" style="display:block;padding:10px;'
-                f'background:{color};border:1px solid #ccc;border-radius:4px;'
-                f'text-decoration:none;color:#0066cc;">{f["text"]}</a>',
-                unsafe_allow_html=True
-            )
-        with col2:
-            if st.button("✕", key=f"wx_del_{f['mail_id']}", help="删除此条"):
-                to_delete.append(f['mail_id'])
-
-    if to_delete:
-        st.session_state.wx_flights = [
-            x for x in st.session_state.wx_flights if x['mail_id'] not in to_delete
-        ]
-        st.rerun()
-
-    if shown == 0:
-        st.info("所有邮件都已过期或已手动删除。")
+        if shown == 0:
+            st.info("所有邮件都已过期或已手动删除。")
     else:
         st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
 
