@@ -3262,76 +3262,77 @@ console.log("📌 输入 fillNext() 填充下一条");
 # ==============================
 # 功能 I：WX AND NOTAM 邮件生成（隔离刷新）
 # ==============================
-@st.fragment(run_every="10m")
+WX_PILOT_MAP = {
+    "P001": "gengfan@amber-aviation.com",
+    "P002": "zhangyongyi@amber-aviation.com",
+    "P003": "fmei@amber-aviation.com",
+    "P004": "wangbin@amber-aviation.com",
+    "P019": "darranhealy@amber-aviation.com",
+    "P020": "thaddeusbeebe@amber-aviation.com",
+    "P032": "ericlin@amber-aviation.com",
+    "P035": "prjackson@amber-aviation.com",
+    "P036": "warrenwang@amber-aviation.com",
+    "P038": "johnmiao@amber-aviation.com",
+    "P039": "yiftahrauch@amber-aviation.com",
+    "P044": "rockli@amber-aviation.com",
+    "P046": "zhyszhao@amber-aviation.com",
+    "P051": "eugene.peng@humbleholding.com",
+    "P052": "brian.wu@humbleholding.com",
+    "P053": "brwaines@amber-aviation.com",
+    "P054": "rbonetti@amber-aviation.com",
+    "P056": "krsherren@amber-aviation.com",
+    "P057": "ovracz@amber-aviation.com",
+    "P059": "kctsai@amber-aviation.com",
+    "P061": "qhli@amber-aviation.com",
+    "P065": "wsong@amber-aviation.com",
+    "P068": "zjzan@amber-aviation.com",
+    "P069": "simoneroeder@amber-aviation.com",
+    "P070": "hdstamm@amber-aviation.com",
+    "P071": "jasonsun@amber-aviation.com",
+    "P072": "zyzhu@amber-aviation.com",
+    "P074": "smjin@amber-aviation.com",
+    "P075": "eduardroski@amber-aviation.com",
+    "P077": "andyliu@amber-aviation.com",
+    "P078": "fzhang@amber-aviation.com",
+    "P079": "wesleywei@amber-aviation.com",
+    "P080": "sliu@amber-aviation.com",
+    "P081": "richardwu@amber-aviation.com",
+    "P082": "frankliu@amber-aviation.com",
+    "P083": "xyou@amber-aviation.com",
+    "P084": "ymli@amber-aviation.com",
+    "P085": "lzhao@amber-aviation.com",
+    "P086": "hxzhang@amber-aviation.com",
+    "P087": "hesun@amber-aviation.com",
+    "P088": "harryma@amber-aviation.com",
+    "P089": "xlli@amber-aviation.com",
+    "P090": "hdhuang@amber-aviation.com",
+    "P091": "mikema@amber-aviation.com",
+    "PJZ001": "zzhang@amber-aviation.com",
+    "PJZ002": "charlesguo@amber-aviation.com",
+    "PJZ004": "leowang@amber-aviation.com",
+    "PJZ005": "evawang@amber-aviation.com",
+    "PJZ007": "frankxu@amber-aviation.com",
+    "PJZ008": "ariayang@amber-aviation.com",
+    "W070": "wang_yanhai@163.com",
+    "W213": "cshum@tagaviation.com",
+    "W267": "naten7@hotmail.com",
+    "W268": "pilotlocalizer@gmail.com",
+    "W270": "yang_tao2005@aliyun.com",
+    "W272": "Andrew.king@aero.bombardier.com",
+}
+
+WX_TZ = timezone(timedelta(hours=8))
+def wx_now():
+    return datetime.now(WX_TZ).replace(tzinfo=None)
+
+
 def run_feature_wx_mail():
     st.subheader("WX AND NOTAM 邮件生成器")
-
-    WX_PILOT_MAP = {
-        "P001": "gengfan@amber-aviation.com",
-        "P002": "zhangyongyi@amber-aviation.com",
-        "P003": "fmei@amber-aviation.com",
-        "P004": "wangbin@amber-aviation.com",
-        "P019": "darranhealy@amber-aviation.com",
-        "P020": "thaddeusbeebe@amber-aviation.com",
-        "P032": "ericlin@amber-aviation.com",
-        "P035": "prjackson@amber-aviation.com",
-        "P036": "warrenwang@amber-aviation.com",
-        "P038": "johnmiao@amber-aviation.com",
-        "P039": "yiftahrauch@amber-aviation.com",
-        "P044": "rockli@amber-aviation.com",
-        "P046": "zhyszhao@amber-aviation.com",
-        "P051": "eugene.peng@humbleholding.com",
-        "P052": "brian.wu@humbleholding.com",
-        "P053": "brwaines@amber-aviation.com",
-        "P054": "rbonetti@amber-aviation.com",
-        "P056": "krsherren@amber-aviation.com",
-        "P057": "ovracz@amber-aviation.com",
-        "P059": "kctsai@amber-aviation.com",
-        "P061": "qhli@amber-aviation.com",
-        "P065": "wsong@amber-aviation.com",
-        "P068": "zjzan@amber-aviation.com",
-        "P069": "simoneroeder@amber-aviation.com",
-        "P070": "hdstamm@amber-aviation.com",
-        "P071": "jasonsun@amber-aviation.com",
-        "P072": "zyzhu@amber-aviation.com",
-        "P074": "smjin@amber-aviation.com",
-        "P075": "eduardroski@amber-aviation.com",
-        "P077": "andyliu@amber-aviation.com",
-        "P078": "fzhang@amber-aviation.com",
-        "P079": "wesleywei@amber-aviation.com",
-        "P080": "sliu@amber-aviation.com",
-        "P081": "richardwu@amber-aviation.com",
-        "P082": "frankliu@amber-aviation.com",
-        "P083": "xyou@amber-aviation.com",
-        "P084": "ymli@amber-aviation.com",
-        "P085": "lzhao@amber-aviation.com",
-        "P086": "hxzhang@amber-aviation.com",
-        "P087": "hesun@amber-aviation.com",
-        "P088": "harryma@amber-aviation.com",
-        "P089": "xlli@amber-aviation.com",
-        "P090": "hdhuang@amber-aviation.com",
-        "P091": "mikema@amber-aviation.com",
-        "PJZ001": "zzhang@amber-aviation.com",
-        "PJZ002": "charlesguo@amber-aviation.com",
-        "PJZ004": "leowang@amber-aviation.com",
-        "PJZ005": "evawang@amber-aviation.com",
-        "PJZ007": "frankxu@amber-aviation.com",
-        "PJZ008": "ariayang@amber-aviation.com",
-        "W070": "wang_yanhai@163.com",
-        "W213": "cshum@tagaviation.com",
-        "W267": "naten7@hotmail.com",
-        "W268": "pilotlocalizer@gmail.com",
-        "W270": "yang_tao2005@aliyun.com",
-        "W272": "Andrew.king@aero.bombardier.com",
-    }
-
-    WX_TZ = timezone(timedelta(hours=8))
-    def wx_now():
-        return datetime.now(WX_TZ).replace(tzinfo=None)
 
     if 'wx_flights' not in st.session_state:
         st.session_state.wx_flights = []
 
+    # ====== 上传和输入放在 fragment 外面，不会被自动刷新重置 ======
     wx_flight_file = st.file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
     wx_plan_text = st.text_area(
         "粘贴文本飞行计划", height=200, key="wx_plan_text",
@@ -3508,38 +3509,47 @@ def run_feature_wx_mail():
                 if not result:
                     st.warning("未生成任何邮件，请检查航班号和起飞时间是否与航段表一致。")
 
-    if st.session_state.wx_flights:
-        wx_now_dt = wx_now()
-        shown = 0
-        to_delete = []
-        for f in st.session_state.wx_flights:
-            dep_dt = f['dep_dt']
-            if wx_now_dt >= dep_dt:
-                continue
-            shown += 1
-            three_h = dep_dt - timedelta(hours=3)
-            color = '#fff9c4' if wx_now_dt >= three_h else '#f0f0f0'
+    # ====== 邮件列表渲染放到 fragment 里，自动刷新不影响上面 ======
+    render_wx_mail_list()
 
-            col1, col2 = st.columns([12, 1])
-            with col1:
-                st.markdown(
-                    f'<a href="{f["mailto"]}" target="_blank" style="display:block;padding:10px;'
-                    f'background:{color};border:1px solid #ccc;border-radius:4px;'
-                    f'text-decoration:none;color:#0066cc;">{f["text"]}</a>',
-                    unsafe_allow_html=True
-                )
-            with col2:
-                if st.button("✕", key=f"wx_del_{f['mail_id']}", help="删除此条"):
-                    to_delete.append(f['mail_id'])
 
-        if to_delete:
-            st.session_state.wx_flights = [
-                x for x in st.session_state.wx_flights if x['mail_id'] not in to_delete
-            ]
-            st.rerun()
+@st.fragment(run_every="10m")
+def render_wx_mail_list():
+    if not st.session_state.get('wx_flights'):
+        st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
+        return
 
-        if shown == 0:
-            st.info("所有邮件都已过期或已手动删除。")
+    wx_now_dt = wx_now()
+    shown = 0
+    to_delete = []
+    for f in st.session_state.wx_flights:
+        dep_dt = f['dep_dt']
+        if wx_now_dt >= dep_dt:
+            continue
+        shown += 1
+        three_h = dep_dt - timedelta(hours=3)
+        color = '#fff9c4' if wx_now_dt >= three_h else '#f0f0f0'
+
+        col1, col2 = st.columns([12, 1])
+        with col1:
+            st.markdown(
+                f'<a href="{f["mailto"]}" target="_blank" style="display:block;padding:10px;'
+                f'background:{color};border:1px solid #ccc;border-radius:4px;'
+                f'text-decoration:none;color:#0066cc;">{f["text"]}</a>',
+                unsafe_allow_html=True
+            )
+        with col2:
+            if st.button("✕", key=f"wx_del_{f['mail_id']}", help="删除此条"):
+                to_delete.append(f['mail_id'])
+
+    if to_delete:
+        st.session_state.wx_flights = [
+            x for x in st.session_state.wx_flights if x['mail_id'] not in to_delete
+        ]
+        st.rerun()
+
+    if shown == 0:
+        st.info("所有邮件都已过期或已手动删除。")
     else:
         st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
 
