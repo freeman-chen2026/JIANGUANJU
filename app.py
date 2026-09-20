@@ -2902,7 +2902,6 @@ def run_feature_chk():
         return
 
     try:
-        # 先读成无标题格式，自动定位标题行
         chk_raw = pd.read_excel(chk_file, sheet_name=0, header=None)
         chk_header_idx = None
         for i in range(min(len(chk_raw), 10)):
@@ -3332,34 +3331,7 @@ def run_feature_wx_mail():
     if 'wx_flights' not in st.session_state:
         st.session_state.wx_flights = []
 
-    # ====== 文件上传（带缓存恢复） ======
     wx_flight_file = st.file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
-
-    if wx_flight_file is not None:
-        file_key = f"{wx_flight_file.name}_{wx_flight_file.size}"
-        if st.session_state.get("wx_file_key") != file_key:
-            try:
-                raw_bytes = wx_flight_file.read()
-                st.session_state.wx_file_raw = raw_bytes
-                st.session_state.wx_file_is_csv = wx_flight_file.name.lower().endswith('.csv')
-                st.session_state.wx_file_key = file_key
-                st.session_state.wx_file_name = wx_flight_file.name
-            except Exception as e:
-                st.error(f"缓存文件失败：{e}")
-
-    # 显示缓存状态 + 清空按钮
-    if st.session_state.get("wx_file_key"):
-        col_a, col_b = st.columns([4, 1])
-        with col_a:
-            st.success(f"✅ 已缓存文件：**{st.session_state.get('wx_file_name', '未知')}**（页面重跑后自动恢复，无需重新上传）")
-        with col_b:
-            if st.button("🗑️ 清空缓存文件", key="wx_clear_file_cache"):
-                st.session_state.wx_file_key = None
-                st.session_state.wx_file_name = None
-                st.session_state.wx_file_raw = None
-                st.session_state.wx_file_is_csv = None
-                st.rerun()
-
     wx_plan_text = st.text_area(
         "粘贴文本飞行计划", height=200, key="wx_plan_text",
         placeholder="B652Q 06:00 - 07:55\n北京大兴 - 上海虹桥\nP035,P039,C051\n\nB65AP 07:30 - 09:00\n..."
@@ -3372,37 +3344,17 @@ def run_feature_wx_mail():
         refresh_btn = st.button("🔄 刷新列表（更新颜色/隐藏过期）", key="wx_refresh_btn")
 
     if gen_btn:
-        # 判断文件来源：优先用新上传的，否则用缓存的
-        has_file = False
-        raw = None
-
-        if wx_flight_file is not None:
+        if wx_flight_file is None:
+            st.error("请先上传航段表")
+        elif not wx_plan_text.strip():
+            st.error("请粘贴文本飞行计划")
+        else:
             try:
                 if wx_flight_file.name.lower().endswith('.csv'):
                     raw = pd.read_csv(wx_flight_file, header=None, dtype=str)
                 else:
                     raw = pd.read_excel(wx_flight_file, header=None)
-                has_file = True
-            except Exception as e:
-                st.error(f"读取新上传文件失败：{e}")
-        elif st.session_state.get("wx_file_raw") is not None:
-            try:
-                from io import BytesIO as _BytesIO
-                buf = _BytesIO(st.session_state.wx_file_raw)
-                if st.session_state.get("wx_file_is_csv"):
-                    raw = pd.read_csv(buf, header=None, dtype=str)
-                else:
-                    raw = pd.read_excel(buf, header=None)
-                has_file = True
-            except Exception as e:
-                st.error(f"读取缓存文件失败：{e}")
 
-        if not has_file:
-            st.error("请先上传航段表（或缓存文件已失效，请重新上传）")
-        elif not wx_plan_text.strip():
-            st.error("请粘贴文本飞行计划")
-        else:
-            try:
                 wx_header_row = None
                 for i in range(min(len(raw), 10)):
                     vals = [str(v).strip() for v in raw.iloc[i].values if pd.notna(v)]
@@ -3418,7 +3370,7 @@ def run_feature_wx_mail():
                 wx_df2.columns = [str(v).strip() for v in raw.iloc[wx_header_row].values]
                 wx_df2 = wx_df2.reset_index(drop=True)
             except Exception as e:
-                st.error(f"解析航段表失败：{e}")
+                st.error(f"读取航段表失败：{e}")
                 st.stop()
 
             def wx_find_col(df, keywords):
@@ -3561,7 +3513,6 @@ def run_feature_wx_mail():
                 if not result:
                     st.warning("未生成任何邮件，请检查航班号和起飞时间是否与航段表一致。")
 
-    # ====== 邮件列表渲染（手动刷新，无自动重跑） ======
     if st.session_state.wx_flights:
         wx_now_dt = wx_now()
         shown = 0
