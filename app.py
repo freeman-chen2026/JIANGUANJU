@@ -14,6 +14,77 @@ from collections import defaultdict
 import traceback
 from urllib.parse import quote
 
+# ============ 磁盘缓存文件上传组件 ============
+import pickle as _pickle
+import time as _time
+
+_CACHE_DIR = "/tmp/flight_app_cache"
+try:
+    os.makedirs(_CACHE_DIR, exist_ok=True)
+except Exception:
+    pass
+
+
+class _CachedUploadedFile:
+    def __init__(self, name, data):
+        self.name = name
+        self.size = len(data)
+        self.type = "application/octet-stream"
+        self._data = data
+        self._pos = 0
+
+    def getvalue(self):
+        return self._data
+
+    def read(self, size=-1):
+        if size == -1:
+            result = self._data[self._pos:]
+            self._pos = len(self._data)
+        else:
+            result = self._data[self._pos:self._pos + size]
+            self._pos += size
+        return result
+
+    def seek(self, pos, whence=0):
+        if whence == 0:
+            self._pos = pos
+        elif whence == 1:
+            self._pos += pos
+        elif whence == 2:
+            self._pos = len(self._data) + pos
+        return self._pos
+
+    def tell(self):
+        return self._pos
+
+
+def st_file_uploader(label, type=None, key=None, **kwargs):
+    uploaded = st.file_uploader(label, type=type, key=key, **kwargs)
+
+    cache_key = key or label.replace(" ", "_").replace("/", "_").replace("：", "_")[:60]
+    cache_path = os.path.join(_CACHE_DIR, f"{cache_key}.pkl")
+
+    if uploaded is not None:
+        try:
+            data = uploaded.getvalue()
+            with open(cache_path, "wb") as fp:
+                _pickle.dump({"name": uploaded.name, "data": data, "time": _time.time()}, fp)
+        except Exception:
+            pass
+        return uploaded
+
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as fp:
+                cached = _pickle.load(fp)
+            if _time.time() - cached.get("time", 0) < 7 * 86400:
+                return _CachedUploadedFile(cached["name"], cached["data"])
+        except Exception:
+            pass
+
+    return None
+# =================================================
+
 # ==============================
 # 通用工具函数（供各功能使用）
 # ==============================
@@ -99,13 +170,12 @@ def format_time(value):
     return str(value)
 
 # ==============================
-# 功能 A：每日飞行数据自动更新（仅修改第2行日期和第5行数据，不改第3行）
+# 功能 A：每日飞行数据自动更新
 # ==============================
 from openpyxl.cell.rich_text import CellRichText, TextBlock
 
 
 def update_cell_date_only(cell, new_date_str):
-    """只替换单元格中的日期部分（如 9月7日 → 9月8日），保留其他文本和样式"""
     val = cell.value
     if val is None:
         return
@@ -136,18 +206,13 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     yesterday = today - timedelta(days=1)
     before_yesterday = today - timedelta(days=2)
 
-    # ---- 日期字符串 ----
-    today_str = f"{today.month}月{today.day}日"           # 今日（用于 A1、文件名）
-    yesterday_str = f"{yesterday.month}月{yesterday.day}日"  # 昨日（用于 H2/I2 数据日期）
+    today_str = f"{today.month}月{today.day}日"
+    yesterday_str = f"{yesterday.month}月{yesterday.day}日"
 
-    # ---- 0. 修改 A1 标题中的日期为【今日】 ----
     update_cell_date_only(ws.cell(row=1, column=1), today_str)
-
-    # ---- 1. 修改 H2、I2 中的日期为【昨日】（数据日期） ----
     update_cell_date_only(ws.cell(row=2, column=8), yesterday_str)
     update_cell_date_only(ws.cell(row=2, column=9), yesterday_str)
 
-    # ---- 2. 筛选有效航段 ----
     valid_mask = excel2_df[flight_col].notna()
     valid_df = excel2_df[valid_mask].copy()
 
@@ -159,11 +224,9 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     total_hours_str = f"{total_hours:.2f}"
     total_flights = len(valid_df)
 
-    # ---- 3. 写入 H5 和 I5 ----
     ws.cell(row=5, column=8).value = total_hours_str
     ws.cell(row=5, column=9).value = total_flights
 
-    # ---- 4. J5 累计时间 ----
     old_j5 = ws.cell(row=5, column=10).value
     if old_j5 is None or old_j5 == "":
         old_j5_float = 0.0
@@ -175,7 +238,6 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     new_j5_float = old_j5_float + total_hours
     ws.cell(row=5, column=10).value = f"{new_j5_float:.2f}"
 
-    # ---- 5. K5 累计架次 ----
     old_k5 = ws.cell(row=5, column=11).value
     if old_k5 is None or old_k5 == "":
         old_k5 = 0
@@ -187,7 +249,6 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     new_k5 = old_k5 + total_flights
     ws.cell(row=5, column=11).value = new_k5
 
-    # ---- 6. M5：昨日运行地点 ----
     m5_locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -200,12 +261,10 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     m5_value = '、'.join(m5_list) + '/通航运输' if m5_list else '/通航运输'
     ws.cell(row=5, column=13).value = m5_value
 
-    # ---- 7. N5：使用航空器数量 ----
     reg_series_valid = valid_df[reg_col].dropna()
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)
 
-    # ---- 8. S5：次日（明日）计划运行地点 ----
     future_display = ""
     if future_df is not None and not future_df.empty:
         future_locations = set()
@@ -223,7 +282,6 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     else:
         ws.cell(row=5, column=19).value = ""
 
-    # ========== 统计信息 ==========
     stats = {
         '昨日飞行时间': total_hours_str,
         '架次': total_flights,
@@ -242,9 +300,9 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
 
 
 def run_feature_a():
-    excel1_file = st.file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
-    excel2_file = st.file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
-    excel3_file = st.file_uploader(
+    excel1_file = st_file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
+    excel2_file = st_file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
+    excel3_file = st_file_uploader(
         "📂 上传：航段数据导出（今天次日，比如今日12号，上传13号的航段数据）（用于填入次日飞行计划运行地点）",
         type=["xlsx", "xlsm"],
         key="a_excel3"
@@ -275,7 +333,6 @@ def run_feature_a():
                     st.error(f"未能自动匹配以下列：{', '.join(missing)}，请检查文件列名是否包含关键词。")
                     return
 
-                # 读取次日计划数据（可选）
                 future_df = None
                 if excel3_file is not None:
                     future_df = read_excel_with_auto_header(excel3_file, keywords)
@@ -294,13 +351,11 @@ def run_feature_a():
 
                 st.success("✅ 处理完成")
 
-                # ---- 显示核心指标 ----
                 col1, col2, col3 = st.columns(3)
                 col1.metric("昨日总飞行时间", stats['昨日飞行时间'])
                 col2.metric("架次", stats['架次'])
                 col3.metric("使用航空器数量", stats['注册号数量'])
 
-                # 截止时间指标
                 time_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行时间' in k]
                 flights_labels = [k for k in stats.keys() if k.startswith('截止') and '总飞行架次' in k]
 
@@ -312,7 +367,6 @@ def run_feature_a():
                 col6.metric(flights_labels[0], stats[flights_labels[0]])
                 col7.metric(flights_labels[1], stats[flights_labels[1]])
 
-                # ---- 显示运行地点 ----
                 st.subheader("📍 运行地点")
                 if stats['昨日运行地点']:
                     st.write(f"**昨日运行地点：** {stats['昨日运行地点']}")
@@ -323,7 +377,6 @@ def run_feature_a():
                 else:
                     st.write("**次日运行地点：** （未上传次日计划文件）")
 
-                # ===== 文件名使用今日日期 =====
                 today = datetime.now().date()
                 file_name = f"中南-深圳局-天成商务航空有限公司-{today.month}月{today.day}日飞行计划日报.xlsx"
 
@@ -344,6 +397,8 @@ def run_feature_a():
                     os.unlink(excel1_path)
                 if 'output_path' in locals() and os.path.exists(output_path):
                     os.unlink(output_path)
+
+
 # ==============================
 # 功能 B：模板生成备案表
 # ==============================
@@ -426,7 +481,7 @@ def run_feature_b():
     st.subheader("📂 模板管理")
     if st.session_state.template_wb is None:
         st.info("首次使用请上传模板文件。")
-        template_file = st.file_uploader("上传：桌面-Jetops申请一览-每日通航运行情况跟踪表（天成商务航空有限公司）20260708", type=["xlsx"], key="b_template_upload")
+        template_file = st_file_uploader("上传：桌面-Jetops申请一览-每日通航运行情况跟踪表（天成商务航空有限公司）20260708", type=["xlsx"], key="b_template_upload")
         if template_file:
             try:
                 wb = load_workbook(template_file)
@@ -455,7 +510,7 @@ def run_feature_b():
             st.rerun()
 
     st.subheader("📊 数据上传")
-    data_file = st.file_uploader("上传：航段数据导出（当日B机）", type=["xlsx"], key="b_data_upload")
+    data_file = st_file_uploader("上传：航段数据导出（当日B机）", type=["xlsx"], key="b_data_upload")
 
     if data_file and st.session_state.template_wb is not None:
         try:
@@ -645,6 +700,7 @@ def run_feature_b():
         else:
             st.info("👆 请上传航段数据 Excel 文件。")
 
+
 # ==============================
 # 功能 C：生成每日运行跟踪表
 # ==============================
@@ -664,8 +720,8 @@ def run_feature_c():
 
     st.markdown("上传 **天成商务航空每日运行跟踪** 模板和 **航段数据导出**，自动在模板最下方新增一行今日汇总数据。")
 
-    template_file = st.file_uploader("📂 上传：Operation-每日通航运行情况-天成商务航空每日运行跟踪", type=["xlsx"], key="c_template")
-    data_file = st.file_uploader("📂 上传：航段数据导出（当日B机）", type=["xlsx"], key="c_data")
+    template_file = st_file_uploader("📂 上传：Operation-每日通航运行情况-天成商务航空每日运行跟踪", type=["xlsx"], key="c_template")
+    data_file = st_file_uploader("📂 上传：航段数据导出（当日B机）", type=["xlsx"], key="c_data")
 
     if template_file and data_file:
         with st.spinner("正在处理..."):
@@ -868,11 +924,10 @@ def run_feature_c():
                 st.error(f"处理失败：{e}")
                 st.exception(e)
 
+
 # ==============================
+# 功能 D：通航脚本生成器
 # ==============================
-# 功能 D：通航脚本生成器（完整版，包含所有脚本生成函数）
-# ==============================
-# ---------- 以下为脚本生成所需的全局常量和辅助函数 ----------
 COUNTRIES = [
     "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
     "柬埔寨", "缅甸", "泰国", "马来西亚", "文莱", "新加坡", "印度尼西亚", "东帝汶",
@@ -1079,7 +1134,6 @@ def build_city_mappings(df, custom_detail_map):
 
     return city_map, detail_map
 
-# ---------- 以下三个函数为脚本生成核心，完整包含 ----------
 def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json):
     return f"""
 // ================= 公共辅助函数（基础脚本） =================
@@ -1631,7 +1685,6 @@ async function tryMatchPlan(plan) {{
     return null;
 }}
 
-// ---------- 修改点1：waitForManualExecute 支持空格/回车跳过 ----------
 async function waitForManualExecute(plan) {{
     console.log(`%c⏳ 等待手动操作：请点击计划【${{plan["飞机注册号"]}} - ${{plan["出发城市"]}} → ${{plan["到达城市"]}}】对应的“执行”按钮`, 'background: #ff9800; color: white; font-size: 14px; padding: 4px 8px; border-radius: 4px');
     console.log(`%c💡 按 空格键 或 回车键 可跳过此计划，继续处理下一个`, 'background: #2196F3; color: white; font-size: 12px; padding: 2px 6px; border-radius: 4px');
@@ -1674,7 +1727,6 @@ async function waitForManualExecute(plan) {{
     return await getMainDoc();
 }}
 
-// ---------- 修改点2：processExistingPlanWithManual 处理跳过返回值 ----------
 async function processExistingPlanWithManual(row, plan) {{
     console.log(`\\n🔧 开始处理计划（手动执行后自动填写）：机号 ${{plan["飞机注册号"]}}`);
     
@@ -1684,7 +1736,6 @@ async function processExistingPlanWithManual(row, plan) {{
         return false;
     }}
 
-    // 等待日期输入框（再次确认）
     const startDateXPath = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[9]/div/input';
     const endDateXPath   = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[10]/div/input';
     console.log('⏳ 等待日期输入框...');
@@ -1735,7 +1786,6 @@ async function processExistingPlanWithManual(row, plan) {{
     return true;
 }}
 
-// ---------- runDailyPlans 保持不变 ----------
 async function runDailyPlans() {{
     console.log('🚀 开始执行当日计划自动化流程...');
     let processedCount = 0;
@@ -1893,12 +1943,10 @@ async function processNextDayRecord(record) {{
     if (insuranceSelect) await setSelectValue(insuranceSelect, "已参保");
     else console.warn('未找到保险情况下拉框');
 
-    // ========== 修改点：提交后自动点击确定按钮，若失败则等待人工 ==========
     const submitBtn = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[40]/ul/li[2]/input', 5000, true);
     if (submitBtn) {{
         submitBtn.click();
         console.log('✅ 已点击“提交”按钮，等待弹窗...');
-        // 尝试自动点击确定
         let confirmBtn = null;
         for (let attempt = 0; attempt < 8; attempt++) {{
             confirmBtn = await waitForDialogConfirmButton(2000);
@@ -1908,7 +1956,6 @@ async function processNextDayRecord(record) {{
         if (confirmBtn) {{
             confirmBtn.click();
             console.log('✅ 已点击确定按钮，提交完成。');
-            // 等待返回列表页
             const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
             if (backBtn) {{
                 console.log('✅ 已返回列表页');
@@ -1948,8 +1995,7 @@ def run_feature_d():
 
     header_row = 1
 
-    # 修改了上传标签
-    uploaded_file = st.file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
+    uploaded_file = st_file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
 
     if uploaded_file is not None:
         try:
@@ -1957,9 +2003,6 @@ def run_feature_d():
             df.columns = df.columns.str.strip()
             df = df.dropna(how='all')
             st.success("文件上传成功！")
-            # 删除了数据预览部分
-            # st.subheader("📊 数据预览（前5行）")
-            # st.dataframe(df.head())
 
             required_cols = ["飞机注册号", "出发日期", "到达日期", "用途", "出发城市", "到达城市", "预计飞行时间", "实际到达"]
             missing = [col for col in required_cols if col not in df.columns]
@@ -1968,7 +2011,6 @@ def run_feature_d():
                 st.info(f"实际列名: {list(df.columns)}")
                 return
 
-            # ---------- 1. 区分已执飞和未来计划 ----------
             df_daily = df[df["实际到达"].notna() & (df["实际到达"].astype(str).str.strip() != "")].copy()
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
             today = date.today()
@@ -1980,7 +2022,6 @@ def run_feature_d():
                 st.warning("没有需要处理的计划。")
                 return
 
-            # ---------- 2. 构建记录 ----------
             daily_records = df_daily.to_dict(orient="records")
             for rec in daily_records:
                 for k, v in rec.items():
@@ -2012,7 +2053,6 @@ def run_feature_d():
                     "flight_minutes": minutes
                 })
 
-            # ---------- 3. 使用复选框让用户选择排除项 ----------
             daily_items = []
             for idx, rec in enumerate(daily_records):
                 item = {
@@ -2085,7 +2125,6 @@ def run_feature_d():
 
             st.info(f"✅ 最终脚本将包含 {len(filtered_daily_records)} 条已执飞计划和 {len(filtered_future_records)} 条未来计划")
 
-            # ---------- 4. 生成脚本 ----------
             custom_detail_map = {}
             city_map, detail_map = build_city_mappings(df, custom_detail_map)
             city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
@@ -2128,13 +2167,15 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-        # ==============================
+
+
+# ==============================
 # 功能 E：值班连班统计
 # ==============================
 def run_feature_e():
     st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
 
-    uploaded_file = st.file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
+    uploaded_file = st_file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
 
     control_staff_input = st.text_input(
         "值班人员名单（空格分隔）",
@@ -2363,6 +2404,7 @@ def run_feature_e():
         csv = result_df.to_csv(index=False).encode("utf-8-sig")
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
 
+
 # ==============================
 # 功能 F：世界时行程
 # ==============================
@@ -2496,7 +2538,7 @@ def run_feature_f():
                 changes[(reg, line)] = 'added'
         return changes
 
-    uploaded_file_2 = st.file_uploader("📤 上传航段数据导出（北京时间）", type=["xlsx"], key="f_worldtime")
+    uploaded_file_2 = st_file_uploader("📤 上传航段数据导出（北京时间）", type=["xlsx"], key="f_worldtime")
 
     if uploaded_file_2 is not None:
         try:
@@ -2575,6 +2617,7 @@ def run_feature_f():
 
     st.markdown("---")
     st.caption("🛠️ 工具说明：日期/时间按北京时间（UTC+8）自动转换为世界时（Z）。对比功能基于上一次上传的记录。")
+
 
 # ==============================
 # 功能 G：航路处理工具
@@ -2889,13 +2932,14 @@ def run_feature_g():
     st.markdown("---")
     st.caption("✈️ 支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀")
 
+
 # ==============================
 # 功能 H：检查单/脚本生成器
 # ==============================
 def run_feature_chk():
     st.markdown("上传航班计划 Excel 文件，自动生成检查单、PRELIM/PACKAGE 和 JavaScript 脚本。")
 
-    chk_file = st.file_uploader("📂 上传航班计划 Excel 文件", type=["xlsx", "xls"], key="chk_file")
+    chk_file = st_file_uploader("📂 上传航班计划 Excel 文件", type=["xlsx", "xls"], key="chk_file")
 
     if chk_file is None:
         st.info("👆 请上传 Excel 文件")
@@ -3258,6 +3302,7 @@ console.log("📌 输入 fillNext() 填充下一条");
     st.subheader("📜 JavaScript 脚本")
     st.code(chk_js, language="javascript")
 
+
 # ==============================
 # 功能 I：WX AND NOTAM 邮件生成（手动刷新版）
 # ==============================
@@ -3331,7 +3376,7 @@ def run_feature_wx_mail():
     if 'wx_flights' not in st.session_state:
         st.session_state.wx_flights = []
 
-    wx_flight_file = st.file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
+    wx_flight_file = st_file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
     wx_plan_text = st.text_area(
         "粘贴文本飞行计划", height=200, key="wx_plan_text",
         placeholder="B652Q 06:00 - 07:55\n北京大兴 - 上海虹桥\nP035,P039,C051\n\nB65AP 07:30 - 09:00\n..."
@@ -3548,15 +3593,14 @@ def run_feature_wx_mail():
     else:
         st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
 
+
 # ==============================
 # 主界面
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== Tab 栏固定顶部 + 前4个一行、后5个一行，左对齐 =====
 st.markdown("""
 <style>
-/* Tab 栏固定在顶部 */
 div[data-testid="stTabs"] > div:first-child {
     position: sticky;
     top: 0;
@@ -3566,7 +3610,6 @@ div[data-testid="stTabs"] > div:first-child {
     padding-bottom: 8px;
     border-bottom: 1px solid #eee;
 }
-/* Tab 容器：换行 + 左对齐 */
 div[data-testid="stTabs"] div[role="tablist"] {
     display: flex !important;
     flex-wrap: wrap !important;
@@ -3575,12 +3618,10 @@ div[data-testid="stTabs"] div[role="tablist"] {
     overflow-x: visible !important;
     white-space: normal !important;
 }
-/* Tab 按内容宽度自适应，不拉伸 */
 div[data-testid="stTabs"] div[role="tablist"] > * {
     flex: 0 0 auto !important;
     margin-bottom: 4px !important;
 }
-/* 第4个 Tab 之后强制换行 */
 div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4) {
     margin-right: 100% !important;
 }
