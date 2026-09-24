@@ -3692,37 +3692,37 @@ def run_feature_wx_mail():
     <title>飞行任务邮件生成器</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
-        h2 { margin: 6px 0 10px 0; font-size:20px; }
-        h3 { margin: 14px 0 8px 0; font-size: 16px; }
-        textarea { width: 100%; height: 160px; box-sizing: border-box; font-family: Consolas, monospace; font-size:13px; padding:6px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
+        h2 { margin: 6px 0 12px 0; font-size:22px; }
+        h3 { margin: 16px 0 10px 0; font-size: 19px; }
+        textarea { width: 100%; height: 170px; box-sizing: border-box; font-family: Consolas, monospace; font-size:15px; padding:8px; }
         #mailList { margin-top: 12px; }
         .mail-row {
-            display: flex; align-items: stretch; margin: 6px 0; gap: 6px;
+            display: flex; align-items: stretch; margin: 8px 0; gap: 8px;
         }
         .mail-link {
-            flex: 1; padding: 10px; box-sizing: border-box;
+            flex: 1; padding: 12px 14px; box-sizing: border-box;
             border-radius: 4px; text-decoration: none; color: #0066cc;
             border: 1px solid #ccc; background: #f0f0f0;
-            transition: background 0.3s; font-size:14px;
+            transition: background 0.3s; font-size:16px;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .mail-link:hover { filter: brightness(0.95); }
         .del-btn {
-            padding: 0 14px; font-size: 15px; border-radius: 4px;
+            padding: 0 18px; font-size: 17px; border-radius: 4px;
             border: 1px solid #ddd; background: #fff; color: #888;
             cursor: pointer; transition: all 0.2s; flex-shrink: 0;
         }
         .del-btn:hover { background: #ffebee; color: #d32f2f; border-color: #ef9a9a; }
-        .error { color: red; padding:6px; background:#ffebee; border-radius:4px; margin:4px 0; }
-        .success { color:#2e7d32; padding:6px; background:#e8f5e9; border-radius:4px; margin:6px 0; }
-        .info { color:#1976d2; padding:6px; background:#e3f2fd; border-radius:4px; margin:6px 0; }
-        button.primary { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ff4b4b; background:#ff4b4b; color:#fff; cursor:pointer; margin-right:6px; font-weight:bold; }
+        .error { color: red; padding:8px; background:#ffebee; border-radius:4px; margin:6px 0; font-size:15px; }
+        .success { color:#2e7d32; padding:8px; background:#e8f5e9; border-radius:4px; margin:6px 0; font-size:15px; }
+        .info { color:#1976d2; padding:8px; background:#e3f2fd; border-radius:4px; margin:6px 0; font-size:15px; }
+        button.primary { padding: 10px 20px; font-size:16px; border-radius:6px; border:1px solid #ff4b4b; background:#ff4b4b; color:#fff; cursor:pointer; margin-right:8px; font-weight:bold; }
         button.primary:hover { background:#e63939; }
-        button { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; margin-right:6px; }
+        button { padding: 10px 20px; font-size:16px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; margin-right:8px; }
         button:hover { background:#f5f5f5; }
-        input[type=file] { padding:6px; }
-        .toolbar { margin: 10px 0; }
+        input[type=file] { padding:6px; font-size:15px; }
+        .toolbar { margin: 12px 0; }
     </style>
 </head>
 <body>
@@ -4055,7 +4055,6 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             container.innerHTML = '';
 
             const now = new Date();
-            // 先自动移除已过期的
             const alive = [];
             for (const m of generatedMails) {
                 const depDt = new Date(m.depDateTime);
@@ -4125,12 +4124,10 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             renderMails();
         }
 
-        // 定时器：每分钟自动刷新（隐藏过期、更新颜色）
         setInterval(() => {
             renderMails();
         }, 60000);
 
-        // 页面加载初始化
         initPilotMap();
         generatedMails = loadMails();
         window.addEventListener('DOMContentLoaded', () => {
@@ -4140,7 +4137,7 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
 </body>
 </html>
 """
-    components.html(WX_HTML, height=1100, scrolling=True)
+    components.html(WX_HTML, height=1200, scrolling=True)
 
 
 # ==============================
