@@ -2941,664 +2941,877 @@ def run_feature_g():
 
 
 # ==============================
-# 功能 H：检查单/脚本生成器
+# 功能 H：检查单/脚本生成器（HTML/JS 沙箱版）
 # ==============================
 def run_feature_chk():
-    st.markdown("上传航班计划 Excel 文件，自动生成检查单、PRELIM/PACKAGE 和 JavaScript 脚本。")
+    CHK_HTML = r"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>检查单 & 填写脚本生成器</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
+        h2 { margin: 8px 0 10px 0; font-size: 20px; }
+        h3 { margin: 18px 0 8px 0; font-size: 16px; }
+        input[type=file] { padding: 6px; }
+        button { padding: 8px 16px; font-size: 14px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
+        button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
+        button.primary:hover { background:#e63939; }
+        button:hover { background:#f5f5f5; }
+        button.primary:hover { background:#e63939; }
+        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:12px; white-space: pre-wrap; word-break: break-all; max-height: 350px; overflow-y:auto; border:1px solid #e0e0e0; }
+        .status { color:#555; font-size:13px; margin-left:8px; }
+        .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
+        .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
+        .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
+        details { margin: 8px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
+        summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+        table { border-collapse: collapse; }
+    </style>
+</head>
+<body>
+    <h2>📝 检查单 & 填写脚本生成器</h2>
+    <p>上传航班计划 Excel 文件，自动生成检查单、PRELIM/PACKAGE 和 JavaScript 脚本。</p>
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div id="status"></div>
 
-    chk_file = sess_file_uploader("📂 上传航班计划 Excel 文件", type=["xlsx", "xls"], key="chk_file")
+    <div id="result" style="display:none;">
+        <div id="summary"></div>
 
-    if chk_file is None:
-        st.info("👆 请上传 Excel 文件")
-        return
+        <h3>📋 检查单（一键复制保留 Times New Roman 14pt 格式）</h3>
+        <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
+        <span class="status" id="copyStatus"></span>
+        <div id="checklistPreview" style="margin-top:10px; border:1px solid #ddd; border-radius:4px; max-height:500px; overflow-y:auto; padding:4px; background:#fff;"></div>
 
-    try:
-        chk_raw = pd.read_excel(chk_file, sheet_name=0, header=None)
-        chk_header_idx = None
-        for i in range(min(len(chk_raw), 10)):
-            vals = [str(v).strip() for v in chk_raw.iloc[i].values if pd.notna(v)]
-            if '飞机注册号' in vals and '出发地' in vals and '到达地' in vals:
-                chk_header_idx = i
-                break
+        <h3>📦 PRELIM / PACKAGE</h3>
+        <div id="prelimPackage"></div>
 
-        if chk_header_idx is None:
-            st.error("未在文件中找到标题行（需包含：飞机注册号、出发地、到达地）")
-            return
+        <h3>📜 JavaScript 填充脚本</h3>
+        <button id="copyJsBtn">📋 复制脚本</button>
+        <span class="status" id="copyJsStatus"></span>
+        <div class="code-block" id="jsScript"></div>
+    </div>
 
-        chk_df = chk_raw.iloc[chk_header_idx + 1:].copy()
-        chk_df.columns = [str(v).strip() for v in chk_raw.iloc[chk_header_idx].values]
-        chk_df = chk_df.reset_index(drop=True)
-    except Exception as e:
-        st.error(f"读取文件失败：{e}")
-        return
+    <script>
+        const CHK_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const CHK_PREFERRED = ["B3926", "B652R", "B8105", "B8160", "B8262", "B8292", "B8309",
+            "N2QE", "N328LM", "N550DR", "N577QT", "N7777U", "N777ZH",
+            "N88AY", "T7178HT", "T7CJK", "VPCSZ", "VPCVA",
+            "B652Q", "B652S", "B65AP", "MLLIN"];
+        const chkPriority = {};
+        CHK_PREFERRED.forEach((ac, i) => chkPriority[ac] = i);
+        const chkDefaultPri = CHK_PREFERRED.length;
 
-    chk_col_aircraft = auto_match_column(chk_df, ['飞机注册号', '注册号', '机号'])
-    chk_col_origin = auto_match_column(chk_df, ['出发地', '起飞机场'])
-    chk_col_dest = auto_match_column(chk_df, ['到达地', '目的地机场'])
-    chk_col_date = auto_match_column(chk_df, ['出发日期', '起飞日期'])
-    chk_col_time = auto_match_column(chk_df, ['计划出发', '起飞时间'])
-    chk_col_purpose = auto_match_column(chk_df, ['用途'])
-    chk_col_dep_city = auto_match_column(chk_df, ['出发城市'])
-    chk_col_arr_city = auto_match_column(chk_df, ['到达城市'])
-    chk_col_arr_date = auto_match_column(chk_df, ['到达日期'])
-    chk_col_arr_time = auto_match_column(chk_df, ['预计到达', '到达时间'])
+        let currentChkRows = [];
+        let currentChkFlights = [];
+        let currentJsScript = '';
 
-    if not all([chk_col_aircraft, chk_col_origin, chk_col_dest]):
-        st.error(f"Excel 缺少必要列。当前列名：{list(chk_df.columns)}")
-        return
+        // ============ 工具函数 ============
+        function pad2(n) { return String(n).padStart(2, '0'); }
 
-    CHK_MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN',
-                  'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+        function parseDate(v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+            if (typeof v === 'number') {
+                const ms = Math.round((v - 25569) * 86400 * 1000);
+                const d = new Date(ms);
+                return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+            }
+            const s = String(v).trim();
+            let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+            if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            return null;
+        }
 
-    def chk_parse_date(d):
-        if d is None or pd.isna(d):
-            return None
-        if isinstance(d, str):
-            d = d.strip()
-            for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%Y-%m-%d %H:%M:%S'):
-                try:
-                    return datetime.strptime(d, fmt)
-                except ValueError:
-                    continue
-            return None
-        if hasattr(d, 'year') and hasattr(d, 'month') and hasattr(d, 'day'):
-            return datetime(d.year, d.month, d.day)
-        return None
+        function parseTime(v) {
+            if (v === null || v === undefined || v === '') return null;
+            if (v instanceof Date) return pad2(v.getHours()) + ':' + pad2(v.getMinutes());
+            if (typeof v === 'number') {
+                const totalMin = Math.round(v * 24 * 60);
+                return pad2(Math.floor(totalMin / 60) % 24) + ':' + pad2(totalMin % 60);
+            }
+            const s = String(v).trim();
+            const m = s.match(/(\d{1,2}):(\d{2})/);
+            if (m) return pad2(parseInt(m[1])) + ':' + m[2];
+            return null;
+        }
 
-    def chk_parse_time(t):
-        if t is None or pd.isna(t):
-            return None
-        if isinstance(t, str):
-            t = t.strip()
-            if ':' in t:
-                parts = t.split(':')
-                try:
-                    return f"{int(parts[0]):02d}:{int(parts[1]):02d}"
-                except (ValueError, IndexError):
-                    return None
-            return None
-        if hasattr(t, 'hour') and hasattr(t, 'minute'):
-            return f"{t.hour:02d}:{t.minute:02d}"
-        return None
+        function getUTCdate(dateVal, timeVal) {
+            const d = parseDate(dateVal);
+            if (!d) return null;
+            const t = parseTime(timeVal);
+            let bj;
+            if (t) {
+                const parts = t.split(':');
+                bj = new Date(d.getFullYear(), d.getMonth(), d.getDate(), parseInt(parts[0]), parseInt(parts[1]));
+            } else {
+                bj = d;
+            }
+            const utc = new Date(bj.getTime() - 8 * 3600 * 1000);
+            return pad2(utc.getDate()) + CHK_MONTHS[utc.getMonth()];
+        }
 
-    def chk_get_utc_date(date_val, time_val):
-        dt_date = chk_parse_date(date_val)
-        if dt_date is None:
-            return None
-        tm = chk_parse_time(time_val)
-        if tm:
-            h, m = tm.split(':')
-            dt_bj = datetime(dt_date.year, dt_date.month, dt_date.day, int(h), int(m))
-        else:
-            dt_bj = dt_date
-        dt_utc = dt_bj - timedelta(hours=8)
-        return f"{dt_utc.day:02d}{CHK_MONTHS[dt_utc.month - 1]}"
+        function getBJdate(dateVal) {
+            const d = parseDate(dateVal);
+            if (!d) return null;
+            return pad2(d.getDate()) + CHK_MONTHS[d.getMonth()];
+        }
 
-    def chk_get_bj_date(date_val):
-        dt_date = chk_parse_date(date_val)
-        if dt_date is None:
-            return None
-        return f"{dt_date.day:02d}{CHK_MONTHS[dt_date.month - 1]}"
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-    chk_flights = []
-    for _, row in chk_df.iterrows():
-        aircraft = row[chk_col_aircraft]
-        origin = row[chk_col_origin]
-        dest = row[chk_col_dest]
-        date_val = row[chk_col_date] if chk_col_date else None
-        time_val = row[chk_col_time] if chk_col_time else None
+        // ============ 主流程 ============
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    processWorkbook(ev.target.result);
+                } catch (err) {
+                    showError('处理失败：' + err.message);
+                    console.error(err);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        });
 
-        if pd.notna(aircraft) and pd.notna(origin) and pd.notna(dest):
-            ac_str = str(aircraft).strip()
-            org_str = str(origin).strip().upper()
-            dst_str = str(dest).strip().upper()
-            if (len(org_str) == 4 and org_str.isalpha() and
-                len(dst_str) == 4 and dst_str.isalpha() and
-                not any('\u4e00' <= ch <= '\u9fff' for ch in ac_str)):
-                chk_flights.append({
-                    "aircraft": ac_str,
-                    "origin": org_str,
-                    "dest": dst_str,
-                    "date": chk_get_utc_date(date_val, time_val),
-                    "date_bj": chk_get_bj_date(date_val),
-                })
+        function processWorkbook(data) {
+            const wb = XLSX.read(data, { type: 'array', cellDates: true });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    if not chk_flights:
-        st.error("❌ 未读取到有效航段数据")
-        return
+            let headerIdx = -1;
+            for (let i = 0; i < Math.min(rows.length, 10); i++) {
+                const vals = rows[i].map(v => String(v).trim());
+                if (vals.includes('飞机注册号') && vals.includes('出发地') && vals.includes('到达地')) {
+                    headerIdx = i;
+                    break;
+                }
+            }
+            if (headerIdx === -1) {
+                showError('未在文件中找到标题行（需包含：飞机注册号、出发地、到达地）');
+                return;
+            }
 
-    st.success(f"✅ 成功解析 {len(chk_flights)} 条有效航段")
+            const headers = rows[headerIdx].map(h => String(h).trim());
+            function findCol(cands) {
+                for (const c of cands) {
+                    const idx = headers.indexOf(c);
+                    if (idx !== -1) return idx;
+                }
+                for (const c of cands) {
+                    for (let i = 0; i < headers.length; i++) {
+                        if (headers[i].includes(c)) return i;
+                    }
+                }
+                return -1;
+            }
 
-    chk_preferred = [
-        "B3926", "B652R", "B8105", "B8160", "B8262", "B8292", "B8309",
-        "N2QE", "N328LM", "N550DR", "N577QT", "N7777U", "N777ZH",
-        "N88AY", "T7178HT", "T7CJK", "VPCSZ", "VPCVA",
-        "B652Q", "B652S", "B65AP", "MLLIN"
-    ]
-    chk_priority = {ac: i for i, ac in enumerate(chk_preferred)}
-    chk_default_pri = len(chk_preferred)
+            const colAircraft = findCol(['飞机注册号', '注册号', '机号']);
+            const colOrigin = findCol(['出发地', '起飞机场']);
+            const colDest = findCol(['到达地', '目的地机场']);
+            const colDate = findCol(['出发日期', '起飞日期']);
+            const colTime = findCol(['计划出发', '起飞时间']);
+            const colPurpose = findCol(['用途']);
+            const colDepCity = findCol(['出发城市']);
+            const colArrCity = findCol(['到达城市']);
+            const colArrDate = findCol(['到达日期']);
+            const colArrTime = findCol(['预计到达', '到达时间']);
 
-    chk_raw_items = []
-    for _, row in chk_df.iterrows():
-        try:
-            aircraft = row[chk_col_aircraft]
-            if pd.isna(aircraft):
-                continue
-            ac_str = str(aircraft).strip()
-            if ac_str.upper() in ('N/A', 'NA', 'NONE', 'NULL', ''):
-                continue
-            if any('\u4e00' <= ch <= '\u9fff' for ch in ac_str):
-                continue
+            if (colAircraft === -1 || colOrigin === -1 || colDest === -1) {
+                showError('Excel 缺少必要列。当前列名：' + headers.join(', '));
+                return;
+            }
 
-            dep_time = row[chk_col_time] if chk_col_time else None
-            arr_time = row[chk_col_arr_time] if chk_col_arr_time else None
-            if pd.isna(dep_time) or pd.isna(arr_time):
-                continue
+            const chkFlights = [];
+            const chkRawItems = [];
 
-            dep_time_str = chk_parse_time(dep_time)
-            arr_time_str = chk_parse_time(arr_time)
-            if not dep_time_str or not arr_time_str:
-                continue
+            for (let i = headerIdx + 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r.length === 0) continue;
+                const get = (idx) => (idx >= 0 && idx < r.length) ? r[idx] : '';
 
-            dep_date = row[chk_col_date] if chk_col_date else None
-            arr_date = row[chk_col_arr_date] if chk_col_arr_date else None
-            dep_city = row[chk_col_dep_city] if chk_col_dep_city else None
-            arr_city = row[chk_col_arr_city] if chk_col_arr_city else None
-            purpose = row[chk_col_purpose] if chk_col_purpose else None
+                const aircraft = get(colAircraft);
+                if (aircraft === '' || aircraft === null || aircraft === undefined) continue;
+                const acStr = String(aircraft).trim();
+                if (/[\u4e00-\u9fa5]/.test(acStr)) continue;
 
-            dep_city_str = str(dep_city).strip() if pd.notna(dep_city) else ""
-            arr_city_str = str(arr_city).strip() if pd.notna(arr_city) else ""
-            purpose_str = str(purpose).strip() if pd.notna(purpose) else ""
+                const origin = get(colOrigin);
+                const dest = get(colDest);
+                if (origin === '' || dest === '') continue;
+                const orgStr = String(origin).trim().toUpperCase();
+                const dstStr = String(dest).trim().toUpperCase();
 
-            dep_dt = chk_parse_date(dep_date)
-            arr_dt = chk_parse_date(arr_date)
-            day_diff = 0
-            if dep_dt and arr_dt:
-                day_diff = (arr_dt.date() - dep_dt.date()).days
-            plus = f" +{day_diff}" if day_diff > 0 else ""
+                if (orgStr.length === 4 && /^[A-Z]+$/.test(orgStr) &&
+                    dstStr.length === 4 && /^[A-Z]+$/.test(dstStr)) {
+                    chkFlights.push({
+                        aircraft: acStr,
+                        origin: orgStr,
+                        dest: dstStr,
+                        date: getUTCdate(get(colDate), get(colTime)),
+                        date_bj: getBJdate(get(colDate)),
+                    });
+                }
 
-            line1 = f"{ac_str} {dep_time_str} - {arr_time_str}{plus}"
-            line2 = f"{dep_city_str} - {arr_city_str}"
+                const depTime = get(colTime);
+                const arrTime = get(colArrTime);
+                if (depTime === '' || arrTime === '') continue;
+                const depTimeStr = parseTime(depTime);
+                const arrTimeStr = parseTime(arrTime);
+                if (!depTimeStr || !arrTimeStr) continue;
 
-            content = f"F\n{line1}\n{line2}" if "调机" in purpose_str else f"{line1}\n{line2}"
+                const depDate = get(colDate);
+                const arrDate = get(colArrDate);
+                const depCity = get(colDepCity);
+                const arrCity = get(colArrCity);
+                const purpose = get(colPurpose);
 
-            chk_raw_items.append({
-                "aircraft": ac_str,
-                "dep_dt": dep_dt,
-                "dep_time_str": dep_time_str,
-                "content": content,
-            })
-        except Exception:
-            continue
+                const depCityStr = depCity ? String(depCity).trim() : '';
+                const arrCityStr = arrCity ? String(arrCity).trim() : '';
+                const purposeStr = purpose ? String(purpose).trim() : '';
 
-    chk_raw_items.sort(key=lambda x: (
-        x["dep_dt"] if x["dep_dt"] else datetime(2100, 1, 1),
-        chk_priority.get(x["aircraft"], chk_default_pri),
-        x["dep_time_str"] or "99:99"
-    ))
+                const depDt = parseDate(depDate);
+                const arrDt = parseDate(arrDate);
+                let dayDiff = 0;
+                if (depDt && arrDt) {
+                    dayDiff = Math.round((arrDt.getTime() - depDt.getTime()) / 86400000);
+                }
+                const plus = dayDiff > 0 ? ' +' + dayDiff : '';
 
-    chk_rows = []
-    prev_date = None
-    prev_ac = None
-    first = True
-    for it in chk_raw_items:
-        cur_date = it["dep_dt"].date() if it["dep_dt"] else None
-        cur_ac = it["aircraft"]
-        if not first and (cur_date != prev_date or cur_ac != prev_ac):
-            chk_rows.append({"type": "blank"})
-        chk_rows.append({"type": "data", "content": it["content"]})
-        prev_date = cur_date
-        prev_ac = cur_ac
-        first = False
+                const line1 = acStr + ' ' + depTimeStr + ' - ' + arrTimeStr + plus;
+                const line2 = depCityStr + ' - ' + arrCityStr;
+                const content = purposeStr.indexOf('调机') !== -1 ? 'F\n' + line1 + '\n' + line2 : line1 + '\n' + line2;
 
-    if chk_rows:
-        chk_rows_json = json.dumps(chk_rows, ensure_ascii=False)
-        components.html(
-            f"""
-            <!DOCTYPE html>
-            <html>
-            <head>
-            <style>
-              body {{ font-family: -apple-system, "Segoe UI", sans-serif; margin: 0; }}
-              .btn {{ padding: 10px 22px; font-size: 16px; cursor: pointer;
-                      background: #ff4b4b; color: white; border: none;
-                      border-radius: 6px; font-weight: bold; }}
-              .btn:hover {{ background: #e63939; }}
-              .status {{ margin-left: 12px; color: #555; font-size: 14px; }}
-            </style>
-            </head>
-            <body>
-            <button class="btn" id="copyBtn">📋 一键复制全部检查单</button>
-            <span class="status" id="status"></span>
-            <script>
-              const rows = {chk_rows_json};
-              function escapeHtml(s) {{
-                return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-              }}
-              const TD_STYLE = "text-align: center; vertical-align: middle; font-family: 'Times New Roman', Times, serif; font-size: 14pt; border: 1px solid #000000;";
-              function renderRow(row) {{
-                if (row.type === 'blank') return '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
-                return '<tr><td style="' + TD_STYLE + '">' +
-                       escapeHtml(row.content).split('\\n').join('<br>') + '</td></tr>';
-              }}
-              document.getElementById('copyBtn').addEventListener('click', async () => {{
-                const html = '<table style="border-collapse: collapse;">' +
-                             rows.map(renderRow).join('') + '</table>';
-                const plain = rows.map(r => r.type === 'blank' ? '' : r.content).join('\\n\\n');
-                try {{
-                  await navigator.clipboard.write([
-                    new ClipboardItem({{
-                      'text/html': new Blob([html], {{type: 'text/html'}}),
-                      'text/plain': new Blob([plain], {{type: 'text/plain'}})
-                    }})
-                  ]);
-                  document.getElementById('status').textContent = '✅ 已复制';
-                }} catch (e) {{
-                  document.getElementById('status').textContent = '❌ 复制失败：' + e.message;
-                }}
-              }});
-            </script>
-            </body>
-            </html>
-            """,
-            height=80,
-        )
+                chkRawItems.push({
+                    aircraft: acStr,
+                    depDt: depDt,
+                    depTimeStr: depTimeStr,
+                    content: content,
+                });
+            }
 
-    st.divider()
+            if (chkFlights.length === 0 && chkRawItems.length === 0) {
+                showError('❌ 未读取到有效航段数据');
+                return;
+            }
 
-    chk_date_groups = {}
-    for f in chk_flights:
-        if not f["date_bj"]:
-            continue
-        d = f["date_bj"]
-        ac = f["aircraft"]
-        if d not in chk_date_groups:
-            chk_date_groups[d] = {}
-        if ac not in chk_date_groups[d]:
-            chk_date_groups[d][ac] = []
-        chk_date_groups[d][ac].append(f)
+            chkRawItems.sort((a, b) => {
+                const ta = a.depDt ? a.depDt.getTime() : Number.MAX_SAFE_INTEGER;
+                const tb = b.depDt ? b.depDt.getTime() : Number.MAX_SAFE_INTEGER;
+                if (ta !== tb) return ta - tb;
+                const pa = chkPriority[a.aircraft] !== undefined ? chkPriority[a.aircraft] : chkDefaultPri;
+                const pb = chkPriority[b.aircraft] !== undefined ? chkPriority[b.aircraft] : chkDefaultPri;
+                if (pa !== pb) return pa - pb;
+                return (a.depTimeStr || '99:99').localeCompare(b.depTimeStr || '99:99');
+            });
 
-    chk_months_map = {m: i for i, m in enumerate(CHK_MONTHS)}
+            const chkRows = [];
+            let prevDate = null, prevAc = null, first = true;
+            for (const it of chkRawItems) {
+                const curDate = it.depDt ? it.depDt.getTime() : null;
+                const curAc = it.aircraft;
+                if (!first && (curDate !== prevDate || curAc !== prevAc)) {
+                    chkRows.push({ type: 'blank' });
+                }
+                chkRows.push({ type: 'data', content: it.content });
+                prevDate = curDate;
+                prevAc = curAc;
+                first = false;
+            }
 
-    def chk_date_key(d):
-        if not d or len(d) < 5:
-            return (99, 0)
-        try:
-            day = int(d[:2])
-        except ValueError:
-            day = 99
-        month = chk_months_map.get(d[2:], 0)
-        return (month, day)
+            renderResult(chkFlights, chkRows, chkRawItems);
+        }
 
-    chk_sorted_dates = sorted(chk_date_groups.keys(), key=chk_date_key)
+        // ============ 渲染 ============
+        const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:14pt; border:1px solid #000000; padding:2px 6px;";
 
-    for date_bj in chk_sorted_dates:
-        with st.expander(f"📅 {date_bj}", expanded=False):
-            ac_groups = chk_date_groups[date_bj]
-            sorted_acs = sorted(ac_groups.keys(),
-                                key=lambda a: chk_priority.get(a, chk_default_pri))
-            for ac in sorted_acs:
-                items = ac_groups[ac]
-                prelims = [f"PRELIM {f['aircraft']} {f['origin']}-{f['dest']} {f['date']}" for f in items]
-                packages = [f"PACKAGE {f['aircraft']} {f['origin']}-{f['dest']} {f['date']}" for f in items]
-                block = "\n".join(prelims) + "\n\n" + "\n".join(packages)
-                st.markdown(f"**{ac}**")
-                st.code(block, language="text")
+        function renderResult(chkFlights, chkRows, chkRawItems) {
+            currentChkRows = chkRows;
+            currentChkFlights = chkFlights;
 
-    st.divider()
+            document.getElementById('result').style.display = 'block';
+            document.getElementById('summary').innerHTML =
+                '<div class="success">✅ 成功解析 ' + chkRawItems.length + ' 条检查单记录，' + chkFlights.length + ' 条 PRELIM/PACKAGE 航段</div>';
 
-    chk_flights_json = json.dumps(chk_flights, ensure_ascii=False, indent=2)
-    chk_js_template = """
-var flightData = __FLIGHT_DATA__;
-var currentIndex = 0;
+            const preview = document.getElementById('checklistPreview');
+            let html = '<table style="border-collapse:collapse; width:100%;">';
+            for (const row of chkRows) {
+                if (row.type === 'blank') {
+                    html += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
+                } else {
+                    const content = row.content.split('\n').map(escapeHtml).join('<br>');
+                    html += '<tr><td style="' + TD_STYLE + '">' + content + '</td></tr>';
+                }
+            }
+            html += '</table>';
+            preview.innerHTML = html;
 
-function getElementByXpath(path) {
-    return document.evaluate(path, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-}
+            renderPrelimPackage(chkFlights);
+            generateJsScript(chkFlights);
 
-function fillFlight(index) {
-    if (index < 0 || index >= flightData.length) {
-        console.error("索引超出范围 (0 ~ " + (flightData.length - 1) + ")");
-        return false;
-    }
-    var data = flightData[index];
-    console.log("🛫 填充第 " + (index+1) + "/" + flightData.length + " 条: " + data.aircraft + "  " + data.origin + " -> " + data.dest);
+            document.getElementById('copyBtn').onclick = copyChecklist;
+            document.getElementById('copyJsBtn').onclick = copyJsScript;
+        }
 
-    var sel = document.getElementById('Aircraft');
-    if (!sel) { console.error("未找到 id='Aircraft'"); return false; }
-    var found = false;
-    for (var opt of sel.options) {
-        if (opt.value === data.aircraft) { opt.selected = true; found = true; break; }
-    }
-    if (!found) { sel.value = data.aircraft; }
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
+        async function copyChecklist() {
+            const status = document.getElementById('copyStatus');
+            let htmlTable = '<table style="border-collapse: collapse;">';
+            for (const row of currentChkRows) {
+                if (row.type === 'blank') {
+                    htmlTable += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
+                } else {
+                    const content = row.content.split('\n').map(escapeHtml).join('<br>');
+                    htmlTable += '<tr><td style="' + TD_STYLE + '">' + content + '</td></tr>';
+                }
+            }
+            htmlTable += '</table>';
 
-    var originInput = getElementByXpath('/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[1]/td[1]/input[1]');
-    if (!originInput) { console.error("未找到起飞机场输入框"); return false; }
-    originInput.focus();
-    originInput.value = data.origin;
-    originInput.dispatchEvent(new Event('input', { bubbles: true }));
-    originInput.dispatchEvent(new Event('change', { bubbles: true }));
-    originInput.dispatchEvent(new Event('blur', { bubbles: true }));
-    originInput.blur();
+            const plain = currentChkRows.map(r => r.type === 'blank' ? '' : r.content).join('\n\n');
 
-    var destInput = getElementByXpath('/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[4]/td[1]/input[1]');
-    if (!destInput) { console.error("未找到目的地机场输入框"); return false; }
-    destInput.focus();
-    destInput.value = data.dest;
-    destInput.dispatchEvent(new Event('input', { bubbles: true }));
-    destInput.dispatchEvent(new Event('change', { bubbles: true }));
-    destInput.dispatchEvent(new Event('blur', { bubbles: true }));
-    destInput.blur();
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': new Blob([htmlTable], { type: 'text/html' }),
+                        'text/plain': new Blob([plain], { type: 'text/plain' })
+                    })
+                ]);
+                status.textContent = '✅ 已复制（可直接粘贴到 Word，保留 Times New Roman 格式）';
+                status.style.color = '#2e7d32';
+            } catch (e) {
+                try {
+                    const div = document.createElement('div');
+                    div.innerHTML = htmlTable;
+                    div.style.position = 'fixed';
+                    div.style.left = '-9999px';
+                    document.body.appendChild(div);
+                    const range = document.createRange();
+                    range.selectNodeContents(div);
+                    const sel = window.getSelection();
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                    document.execCommand('copy');
+                    sel.removeAllRanges();
+                    document.body.removeChild(div);
+                    status.textContent = '✅ 已复制（降级模式）';
+                    status.style.color = '#2e7d32';
+                } catch (e2) {
+                    status.textContent = '❌ 复制失败：' + e.message;
+                    status.style.color = '#d32f2f';
+                }
+            }
+        }
 
-    console.log("✅ 填充完成，请手动点击提交按钮！");
-    return true;
-}
+        function copyJsScript() {
+            const status = document.getElementById('copyJsStatus');
+            navigator.clipboard.writeText(currentJsScript).then(() => {
+                status.textContent = '✅ 已复制';
+                status.style.color = '#2e7d32';
+            }).catch(e => {
+                const ta = document.createElement('textarea');
+                ta.value = currentJsScript;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); status.textContent = '✅ 已复制'; status.style.color = '#2e7d32'; }
+                catch (e2) { status.textContent = '❌ 复制失败'; status.style.color = '#d32f2f'; }
+                document.body.removeChild(ta);
+            });
+        }
 
-function fillNext() {
-    if (currentIndex >= flightData.length) { console.log("🎉 全部填充完毕！"); return; }
-    if (fillFlight(currentIndex)) { currentIndex++; }
-}
+        function renderPrelimPackage(flights) {
+            const container = document.getElementById('prelimPackage');
+            if (flights.length === 0) {
+                container.innerHTML = '<div class="info">无 PRELIM/PACKAGE 数据</div>';
+                return;
+            }
+            const dateGroups = {};
+            for (const f of flights) {
+                if (!f.date_bj) continue;
+                const d = f.date_bj, ac = f.aircraft;
+                if (!dateGroups[d]) dateGroups[d] = {};
+                if (!dateGroups[d][ac]) dateGroups[d][ac] = [];
+                dateGroups[d][ac].push(f);
+            }
+            const monthsMap = {};
+            CHK_MONTHS.forEach((m, i) => monthsMap[m] = i);
+            function dateKey(d) {
+                if (!d || d.length < 5) return [99, 0];
+                const day = parseInt(d.substring(0, 2));
+                const month = monthsMap[d.substring(2)] || 0;
+                return [month, isNaN(day) ? 99 : day];
+            }
+            const sortedDates = Object.keys(dateGroups).sort((a, b) => {
+                const ka = dateKey(a), kb = dateKey(b);
+                return ka[0] !== kb[0] ? ka[0] - kb[0] : ka[1] - kb[1];
+            });
+            let html = '';
+            for (const dateBj of sortedDates) {
+                html += '<details><summary>📅 ' + dateBj + '</summary>';
+                const acGroups = dateGroups[dateBj];
+                const sortedAcs = Object.keys(acGroups).sort((a, b) => {
+                    const pa = chkPriority[a] !== undefined ? chkPriority[a] : chkDefaultPri;
+                    const pb = chkPriority[b] !== undefined ? chkPriority[b] : chkDefaultPri;
+                    return pa - pb;
+                });
+                for (const ac of sortedAcs) {
+                    const items = acGroups[ac];
+                    const prelims = items.map(f => 'PRELIM ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
+                    const packages = items.map(f => 'PACKAGE ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
+                    const block = prelims.join('\n') + '\n\n' + packages.join('\n');
+                    html += '<div style="margin:8px 0;"><b>' + ac + '</b><div class="code-block">' + escapeHtml(block) + '</div></div>';
+                }
+                html += '</details>';
+            }
+            container.innerHTML = html;
+        }
 
-function resetIndex() { currentIndex = 0; console.log("🔄 索引已重置为 0"); }
+        function generateJsScript(flights) {
+            const template = [
+'var flightData = __FLIGHT_DATA__;',
+'var currentIndex = 0;',
+'',
+'function getElementByXpath(path) {',
+'    return document.evaluate(path, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;',
+'}',
+'',
+'function fillFlight(index) {',
+'    if (index < 0 || index >= flightData.length) {',
+'        console.error("索引超出范围 (0 ~ " + (flightData.length - 1) + ")");',
+'        return false;',
+'    }',
+'    var data = flightData[index];',
+'    console.log("🛫 填充第 " + (index+1) + "/" + flightData.length + " 条: " + data.aircraft + "  " + data.origin + " -> " + data.dest);',
+'',
+'    var sel = document.getElementById("Aircraft");',
+'    if (!sel) { console.error("未找到 id=\'Aircraft\'"); return false; }',
+'    var found = false;',
+'    for (var opt of sel.options) {',
+'        if (opt.value === data.aircraft) { opt.selected = true; found = true; break; }',
+'    }',
+'    if (!found) { sel.value = data.aircraft; }',
+'    sel.dispatchEvent(new Event("change", { bubbles: true }));',
+'',
+'    var originInput = getElementByXpath("/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[1]/td[1]/input[1]");',
+'    if (!originInput) { console.error("未找到起飞机场输入框"); return false; }',
+'    originInput.focus();',
+'    originInput.value = data.origin;',
+'    originInput.dispatchEvent(new Event("input", { bubbles: true }));',
+'    originInput.dispatchEvent(new Event("change", { bubbles: true }));',
+'    originInput.dispatchEvent(new Event("blur", { bubbles: true }));',
+'    originInput.blur();',
+'',
+'    var destInput = getElementByXpath("/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[4]/td[1]/input[1]");',
+'    if (!destInput) { console.error("未找到目的地机场输入框"); return false; }',
+'    destInput.focus();',
+'    destInput.value = data.dest;',
+'    destInput.dispatchEvent(new Event("input", { bubbles: true }));',
+'    destInput.dispatchEvent(new Event("change", { bubbles: true }));',
+'    destInput.dispatchEvent(new Event("blur", { bubbles: true }));',
+'    destInput.blur();',
+'',
+'    console.log("✅ 填充完成，请手动点击提交按钮！");',
+'    return true;',
+'}',
+'',
+'function fillNext() {',
+'    if (currentIndex >= flightData.length) { console.log("🎉 全部填充完毕！"); return; }',
+'    if (fillFlight(currentIndex)) { currentIndex++; }',
+'}',
+'',
+'function resetIndex() { currentIndex = 0; console.log("🔄 索引已重置为 0"); }',
+'',
+'console.log("✅ 脚本加载成功，共 " + flightData.length + " 条航段");',
+'console.log("📌 输入 fillNext() 填充下一条");',
+''].join('\n');
+            const dataJson = JSON.stringify(flights, null, 2);
+            currentJsScript = template.replace('__FLIGHT_DATA__', dataJson);
+            document.getElementById('jsScript').textContent = currentJsScript;
+        }
 
-console.log("✅ 脚本加载成功，共 " + flightData.length + " 条航段");
-console.log("📌 输入 fillNext() 填充下一条");
+        function showError(msg) {
+            const status = document.getElementById('status');
+            status.innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
+            document.getElementById('result').style.display = 'none';
+        }
+    </script>
+</body>
+</html>
 """
-    chk_js = chk_js_template.replace("__FLIGHT_DATA__", chk_flights_json)
-    st.subheader("📜 JavaScript 脚本")
-    st.code(chk_js, language="javascript")
+    components.html(CHK_HTML, height=1500, scrolling=True)
 
 
 # ==============================
-# 功能 I：WX AND NOTAM 邮件生成（手动刷新版）
+# 功能 I：WX AND NOTAM 邮件生成（HTML/JS 沙箱版）
 # ==============================
-WX_PILOT_MAP = {
-    "P001": "gengfan@amber-aviation.com",
-    "P002": "zhangyongyi@amber-aviation.com",
-    "P003": "fmei@amber-aviation.com",
-    "P004": "wangbin@amber-aviation.com",
-    "P019": "darranhealy@amber-aviation.com",
-    "P020": "thaddeusbeebe@amber-aviation.com",
-    "P032": "ericlin@amber-aviation.com",
-    "P035": "prjackson@amber-aviation.com",
-    "P036": "warrenwang@amber-aviation.com",
-    "P038": "johnmiao@amber-aviation.com",
-    "P039": "yiftahrauch@amber-aviation.com",
-    "P044": "rockli@amber-aviation.com",
-    "P046": "zhyszhao@amber-aviation.com",
-    "P051": "eugene.peng@humbleholding.com",
-    "P052": "brian.wu@humbleholding.com",
-    "P053": "brwaines@amber-aviation.com",
-    "P054": "rbonetti@amber-aviation.com",
-    "P056": "krsherren@amber-aviation.com",
-    "P057": "ovracz@amber-aviation.com",
-    "P059": "kctsai@amber-aviation.com",
-    "P061": "qhli@amber-aviation.com",
-    "P065": "wsong@amber-aviation.com",
-    "P068": "zjzan@amber-aviation.com",
-    "P069": "simoneroeder@amber-aviation.com",
-    "P070": "hdstamm@amber-aviation.com",
-    "P071": "jasonsun@amber-aviation.com",
-    "P072": "zyzhu@amber-aviation.com",
-    "P074": "smjin@amber-aviation.com",
-    "P075": "eduardroski@amber-aviation.com",
-    "P077": "andyliu@amber-aviation.com",
-    "P078": "fzhang@amber-aviation.com",
-    "P079": "wesleywei@amber-aviation.com",
-    "P080": "sliu@amber-aviation.com",
-    "P081": "richardwu@amber-aviation.com",
-    "P082": "frankliu@amber-aviation.com",
-    "P083": "xyou@amber-aviation.com",
-    "P084": "ymli@amber-aviation.com",
-    "P085": "lzhao@amber-aviation.com",
-    "P086": "hxzhang@amber-aviation.com",
-    "P087": "hesun@amber-aviation.com",
-    "P088": "harryma@amber-aviation.com",
-    "P089": "xlli@amber-aviation.com",
-    "P090": "hdhuang@amber-aviation.com",
-    "P091": "mikema@amber-aviation.com",
-    "PJZ001": "zzhang@amber-aviation.com",
-    "PJZ002": "charlesguo@amber-aviation.com",
-    "PJZ004": "leowang@amber-aviation.com",
-    "PJZ005": "evawang@amber-aviation.com",
-    "PJZ007": "frankxu@amber-aviation.com",
-    "PJZ008": "ariayang@amber-aviation.com",
-    "W070": "wang_yanhai@163.com",
-    "W213": "cshum@tagaviation.com",
-    "W267": "naten7@hotmail.com",
-    "W268": "pilotlocalizer@gmail.com",
-    "W270": "yang_tao2005@aliyun.com",
-    "W272": "Andrew.king@aero.bombardier.com",
-}
-
-WX_TZ = timezone(timedelta(hours=8))
-def wx_now():
-    return datetime.now(WX_TZ).replace(tzinfo=None)
-
-
 def run_feature_wx_mail():
-    st.subheader("WX AND NOTAM 邮件生成器")
+    WX_HTML = r"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>飞行任务邮件生成器</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 10px; color:#333; font-size:14px; }
+        h2 { margin: 6px 0 10px 0; font-size:20px; }
+        textarea { width: 100%; height: 160px; box-sizing: border-box; font-family: Consolas, monospace; font-size:13px; padding:6px; }
+        #output { margin-top: 20px; }
+        .mail-link {
+            display: block; margin: 5px 0; padding: 10px;
+            border-radius: 4px; text-decoration: none; color: #0066cc;
+            border: 1px solid #ccc; background: #f0f0f0;
+            transition: background 0.3s; font-size:14px;
+        }
+        .mail-link:hover { filter: brightness(0.95); }
+        .error { color: red; padding:6px; background:#ffebee; border-radius:4px; margin:4px 0; }
+        .success { color:#2e7d32; padding:6px; background:#e8f5e9; border-radius:4px; margin:6px 0; }
+        button { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; margin-right:6px; }
+        button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight:bold; }
+        button.primary:hover { background:#e63939; }
+        input[type=file] { padding:6px; }
+    </style>
+</head>
+<body>
+    <h2>✉️ 飞行任务邮件生成器</h2>
 
-    if 'wx_flights' not in st.session_state:
-        st.session_state.wx_flights = []
+    <p>上传航段表（Excel 或 CSV）：</p>
+    <input type="file" id="flightFile" accept=".csv,.xlsx,.xls">
 
-    wx_flight_file = sess_file_uploader("上传航段表（Excel 或 CSV）", type=["xlsx", "csv"], key="wx_flight_file")
-    wx_plan_text = st.text_area(
-        "粘贴文本飞行计划", height=200, key="wx_plan_text",
-        placeholder="B652Q 06:00 - 07:55\n北京大兴 - 上海虹桥\nP035,P039,C051\n\nB65AP 07:30 - 09:00\n..."
-    )
+    <p>粘贴文本飞行计划：</p>
+    <textarea id="planText" placeholder="B652Q 06:00 - 07:55
+北京大兴 - 上海虹桥
+P035,P039,C051
 
-    col_a, col_b = st.columns([1, 1])
-    with col_a:
-        gen_btn = st.button("生成邮件链接", key="wx_gen_btn")
-    with col_b:
-        refresh_btn = st.button("🔄 刷新列表（更新颜色/隐藏过期）", key="wx_refresh_btn")
+B65AP 07:30 - 09:00
+日本东京 羽田 - 日本福冈
+P032,P036,C050,M021
+..."></textarea>
 
-    if gen_btn:
-        if wx_flight_file is None:
-            st.error("请先上传航段表")
-        elif not wx_plan_text.strip():
-            st.error("请粘贴文本飞行计划")
-        else:
-            try:
-                if wx_flight_file.name.lower().endswith('.csv'):
-                    raw = pd.read_csv(wx_flight_file, header=None, dtype=str)
-                else:
-                    raw = pd.read_excel(wx_flight_file, header=None)
+    <br><br>
+    <button class="primary" onclick="generate()">生成邮件链接</button>
+    <button onclick="location.reload()">🔄 刷新列表</button>
+    <div id="output"></div>
 
-                wx_header_row = None
-                for i in range(min(len(raw), 10)):
-                    vals = [str(v).strip() for v in raw.iloc[i].values if pd.notna(v)]
-                    if '飞机注册号' in vals and '出发地' in vals and '到达地' in vals:
-                        wx_header_row = i
-                        break
+    <script>
+        const PILOT_CSV = `工号,姓名,邮箱
+P001,庚凡,gengfan@amber-aviation.com
+P002,张永一,zhangyongyi@amber-aviation.com
+P003,梅峰,fmei@amber-aviation.com
+P004,王斌,wangbin@amber-aviation.com
+P019,"HEALY, Darran William",darranhealy@amber-aviation.com
+P020,"BEEBE, Thaddeus John",thaddeusbeebe@amber-aviation.com
+P032,林毅,ericlin@amber-aviation.com
+P035,"Peter Robert, JACKSON",prjackson@amber-aviation.com
+P036,王少雄,warrenwang@amber-aviation.com
+P038,苗旺旺,johnmiao@amber-aviation.com
+P039,"Yiftah, RAUCH",yiftahrauch@amber-aviation.com
+P044,李辛欣,rockli@amber-aviation.com
+P046,赵岩松,zhyszhao@amber-aviation.com
+P051,彭罡,eugene.peng@humbleholding.com
+P052,胡君量,brian.wu@humbleholding.com
+P053,"Bruce Roderick, WAINES",brwaines@amber-aviation.com
+P054,"Rodolfo, BONETTI",rbonetti@amber-aviation.com
+P056,"Keith Robert, SHERREN",krsherren@amber-aviation.com
+P057,"Oliver Viktor, RACZ",ovracz@amber-aviation.com
+P059,蔡国俊,kctsai@amber-aviation.com
+P061,李庆宏,qhli@amber-aviation.com
+P065,宋炜,wsong@amber-aviation.com
+P068,昝昭君,zjzan@amber-aviation.com
+P069,"ROEDER, SIMONE ELKE",simoneroeder@amber-aviation.com
+P070,"Herve Daniel, STAMM",hdstamm@amber-aviation.com
+P071,孙浩,jasonsun@amber-aviation.com
+P072,朱正宇,zyzhu@amber-aviation.com
+P074,金尚明,smjin@amber-aviation.com
+P075,"Eduard Pascal, Roski",eduardroski@amber-aviation.com
+P077,刘凯,andyliu@amber-aviation.com
+P078,张帆,fzhang@amber-aviation.com
+P079,魏思远,wesleywei@amber-aviation.com
+P080,刘爽,sliu@amber-aviation.com
+P081,吴鹏,richardwu@amber-aviation.com
+P082,刘汇川,frankliu@amber-aviation.com
+P083,尤欣,xyou@amber-aviation.com
+P084,李亚民,ymli@amber-aviation.com
+P085,赵镭,lzhao@amber-aviation.com
+P086,张贺新,hxzhang@amber-aviation.com
+P087,孙赫,hesun@amber-aviation.com
+P088,马坚,harryma@amber-aviation.com
+P089,李晓龙,xlli@amber-aviation.com
+P090,黄海东,hdhuang@amber-aviation.com
+P091,马洪双,mikema@amber-aviation.com
+PJZ001,张哲,zzhang@amber-aviation.com
+PJZ002,郭春旭,charlesguo@amber-aviation.com
+PJZ004,王国勤,leowang@amber-aviation.com
+PJZ005,王莹,evawang@amber-aviation.com
+PJZ007,徐卓,frankxu@amber-aviation.com
+PJZ008,杨华,ariayang@amber-aviation.com
+W070,王彦海,wang_yanhai@163.com
+W213,沈志伟,cshum@tagaviation.com
+W267,"Nathon Andrew G, NORBERG",naten7@hotmail.com
+W268,"Daniel, RICHTER",pilotlocalizer@gmail.com
+W270,杨涛,yang_tao2005@aliyun.com
+W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
 
-                if wx_header_row is None:
-                    st.error("未在航段表中找到标题行")
-                    st.stop()
+        let pilotMap = {};
+        let flightRows = [];
+        let clickedSet = new Set();
+        try {
+            clickedSet = new Set(JSON.parse(localStorage.getItem('clickedMails') || '[]'));
+        } catch (e) { clickedSet = new Set(); }
 
-                wx_df2 = raw.iloc[wx_header_row + 1:].copy()
-                wx_df2.columns = [str(v).strip() for v in raw.iloc[wx_header_row].values]
-                wx_df2 = wx_df2.reset_index(drop=True)
-            except Exception as e:
-                st.error(f"读取航段表失败：{e}")
-                st.stop()
+        function parseCSV(text) {
+            const rows = [];
+            let row = [], current = '', inQuotes = false;
+            for (let i = 0; i < text.length; i++) {
+                const c = text[i];
+                if (c === '"') {
+                    if (inQuotes && text[i+1] === '"') { current += '"'; i++; }
+                    else inQuotes = !inQuotes;
+                } else if (c === ',' && !inQuotes) {
+                    row.push(current); current = '';
+                } else if ((c === '\n' || c === '\r') && !inQuotes) {
+                    if (c === '\r' && text[i+1] === '\n') i++;
+                    row.push(current); rows.push(row);
+                    row = []; current = '';
+                } else current += c;
+            }
+            if (current || row.length) { row.push(current); rows.push(row); }
+            return rows;
+        }
 
-            def wx_find_col(df, keywords):
-                for c in df.columns:
-                    cs = str(c).strip()
-                    for kw in keywords:
-                        if kw in cs:
-                            return c
-                return None
+        function initPilotMap() {
+            const rows = parseCSV(PILOT_CSV);
+            const headers = rows[0].map(h => h.trim());
+            const idIdx = headers.indexOf('工号');
+            const emailIdx = headers.indexOf('邮箱');
+            if (idIdx === -1 || emailIdx === -1) { alert('内置名单解析失败'); return; }
+            pilotMap = {};
+            for (let i = 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r.length <= Math.max(idIdx, emailIdx)) continue;
+                const id = r[idIdx].trim();
+                const email = r[emailIdx].trim();
+                if (id && email) pilotMap[id] = email;
+            }
+        }
 
-            wx_col_flight = wx_find_col(wx_df2, ['飞机注册号', '注册号'])
-            wx_col_dep = wx_find_col(wx_df2, ['出发地'])
-            wx_col_arr = wx_find_col(wx_df2, ['到达地'])
-            wx_col_date = wx_find_col(wx_df2, ['出发日期'])
-            wx_col_dep_time = wx_find_col(wx_df2, ['计划出发'])
-            wx_col_arr_time = wx_find_col(wx_df2, ['预计到达'])
+        function readFile(file, callback) {
+            const reader = new FileReader();
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'csv') {
+                reader.onload = e => callback(e.target.result, 'csv');
+                reader.readAsText(file, 'UTF-8');
+            } else {
+                reader.onload = e => callback(e.target.result, 'excel');
+                reader.readAsArrayBuffer(file);
+            }
+        }
 
-            if not all([wx_col_flight, wx_col_dep, wx_col_arr, wx_col_date, wx_col_dep_time]):
-                st.error(f"航段表缺少必要列。当前列名：{list(wx_df2.columns)}")
-            else:
-                def wx_to_time(v):
-                    if v is None:
-                        return None
-                    if isinstance(v, float) and pd.isna(v):
-                        return None
-                    if isinstance(v, (pd.Timestamp, datetime)):
-                        return v.strftime('%H:%M')
-                    if hasattr(v, 'hour') and hasattr(v, 'minute'):
-                        return f"{v.hour:02d}:{v.minute:02d}"
-                    s = str(v).strip()
-                    if not s or s.lower() in ('nan', 'nat'):
-                        return None
-                    m = re.match(r'^(\d{1,2}):(\d{2})', s)
-                    if m:
-                        return f"{int(m.group(1)):02d}:{m.group(2)}"
-                    return None
+        function parseData(data, type) {
+            if (type === 'csv') return parseCSV(data);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+            return XLSX.utils.sheet_to_json(firstSheet, { header: 1, defval: '' });
+        }
 
-                def wx_to_date(v):
-                    if v is None:
-                        return None
-                    if isinstance(v, float) and pd.isna(v):
-                        return None
-                    if isinstance(v, (pd.Timestamp, datetime)):
-                        return v.strftime('%Y-%m-%d')
-                    s = str(v).strip()
-                    if not s or s.lower() in ('nan', 'nat'):
-                        return None
-                    try:
-                        return pd.to_datetime(s).strftime('%Y-%m-%d')
-                    except Exception:
-                        return None
+        function normalizeDate(v) {
+            if (v instanceof Date) {
+                return v.getFullYear() + '-' + String(v.getMonth()+1).padStart(2,'0') + '-' + String(v.getDate()).padStart(2,'0');
+            }
+            if (typeof v === 'number') {
+                const date = new Date(Math.round((v - 25569) * 86400 * 1000));
+                return date.getUTCFullYear() + '-' + String(date.getUTCMonth()+1).padStart(2,'0') + '-' + String(date.getUTCDate()).padStart(2,'0');
+            }
+            const s = String(v).trim();
+            if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+            return s;
+        }
 
-                wx_flight_db = []
-                for _, row in wx_df2.iterrows():
-                    f_no = str(row[wx_col_flight]).strip() if pd.notna(row[wx_col_flight]) else ''
-                    if not f_no or f_no.lower() == 'nan':
-                        continue
-                    date_str = wx_to_date(row[wx_col_date])
-                    dep_t = wx_to_time(row[wx_col_dep_time])
-                    arr_t = wx_to_time(row[wx_col_arr_time]) if wx_col_arr_time else None
-                    if not date_str or not dep_t:
-                        continue
-                    wx_flight_db.append({
-                        'flight': f_no,
-                        'dep': str(row[wx_col_dep]).strip().upper() if pd.notna(row[wx_col_dep]) else '',
-                        'arr': str(row[wx_col_arr]).strip().upper() if pd.notna(row[wx_col_arr]) else '',
-                        'date': date_str,
-                        'dep_time': dep_t,
-                        'arr_time': arr_t or ''
-                    })
+        function normalizeTime(v) {
+            if (v instanceof Date) {
+                return String(v.getHours()).padStart(2,'0') + ':' + String(v.getMinutes()).padStart(2,'0');
+            }
+            if (typeof v === 'number') {
+                const totalMinutes = Math.round(v * 24 * 60);
+                return String(Math.floor(totalMinutes / 60) % 24).padStart(2,'0') + ':' + String(totalMinutes % 60).padStart(2,'0');
+            }
+            const s = String(v).trim();
+            const m = s.match(/(\d{1,2}):(\d{2})/);
+            if (m) return m[1].padStart(2,'0') + ':' + m[2];
+            return s;
+        }
 
-                st.success(f"✅ 航段表解析成功，共 {len(wx_flight_db)} 条航段")
+        document.getElementById('flightFile').addEventListener('change', function(e) {
+            const file = e.target.files[0]; if (!file) return;
+            readFile(file, (data, type) => {
+                const rows = parseData(data, type);
+                let headerIdx = -1;
+                for (let i = 0; i < rows.length; i++) {
+                    const r = rows[i].map(c => String(c).trim());
+                    if (r.includes('飞机注册号') && r.includes('出发地') && r.includes('计划出发')) { headerIdx = i; break; }
+                }
+                if (headerIdx === -1) { alert('航段表未找到标题行'); return; }
+                const headers = rows[headerIdx].map(h => String(h).trim());
+                const col = {
+                    flight: headers.indexOf('飞机注册号'),
+                    depICAO: headers.indexOf('出发地'),
+                    arrICAO: headers.indexOf('到达地'),
+                    date: headers.indexOf('出发日期'),
+                    depTime: headers.indexOf('计划出发'),
+                    arrTime: headers.indexOf('预计到达')
+                };
+                if (Object.values(col).some(v => v === -1)) { alert('航段表缺少必要列'); return; }
+                flightRows = [];
+                for (let i = headerIdx + 1; i < rows.length; i++) {
+                    const r = rows[i];
+                    if (!r || r.length <= col.flight) continue;
+                    const flight = String(r[col.flight] || '').trim();
+                    if (!flight) continue;
+                    flightRows.push({
+                        flight: flight,
+                        depICAO: String(r[col.depICAO] || '').trim(),
+                        arrICAO: String(r[col.arrICAO] || '').trim(),
+                        date: normalizeDate(r[col.date]),
+                        depTime: normalizeTime(r[col.depTime]),
+                        arrTime: normalizeTime(r[col.arrTime])
+                    });
+                }
+                alert('✅ 航段表已加载，共 ' + flightRows.length + ' 条');
+            });
+        });
 
-                wx_plan_flights = []
-                cur = None
-                expect_route = False
-                expect_crew = False
-                wx_flight_re = re.compile(r'^([A-Z0-9]+)\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})')
-                for line in wx_plan_text.split('\n'):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    m = wx_flight_re.match(line)
-                    if m:
-                        if cur:
-                            wx_plan_flights.append(cur)
-                        cur = {'flight': m.group(1), 'dep_time': m.group(2), 'arr_time': m.group(3), 'crew': []}
-                        expect_route = True
-                        expect_crew = False
-                    elif cur and expect_route and '-' in line:
-                        expect_route = False
-                        expect_crew = True
-                    elif cur and expect_crew and ',' in line:
-                        cur['crew'] = [s.strip() for s in line.split(',') if s.strip()]
-                        expect_crew = False
-                if cur:
-                    wx_plan_flights.append(cur)
+        function parsePlan(text) {
+            const lines = text.split(/\r?\n/);
+            const result = [];
+            let cur = null, expectRoute = false, expectCrew = false;
+            const flightRegex = /^([A-Z0-9]+)\s+(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})/;
+            for (let line of lines) {
+                line = line.trim(); if (!line) continue;
+                const m = line.match(flightRegex);
+                if (m) {
+                    if (cur) result.push(cur);
+                    cur = { flight: m[1], depTime: m[2], arrTime: m[3], crew: [] };
+                    expectRoute = true; expectCrew = false;
+                } else if (cur && expectRoute && line.includes('-')) {
+                    expectRoute = false; expectCrew = true;
+                } else if (cur && expectCrew && line.includes(',')) {
+                    cur.crew = line.split(',').map(s => s.trim()).filter(s => s);
+                    expectCrew = false;
+                }
+            }
+            if (cur) result.push(cur);
+            return result;
+        }
 
-                WX_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC']
-                result = []
-                unmatched = []
-                for pf in wx_plan_flights:
-                    match = None
-                    for fd in wx_flight_db:
-                        if fd['flight'] == pf['flight'] and fd['dep_time'] == pf['dep_time']:
-                            match = fd
-                            break
-                    if not match:
-                        unmatched.append(f"{pf['flight']} {pf['dep_time']}")
-                        continue
+        function convertDate(d) {
+            const months = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+            const p = String(d).split('-');
+            if (p.length !== 3) return '';
+            return p[2].padStart(2,'0') + months[parseInt(p[1],10)-1];
+        }
 
-                    try:
-                        dep_dt = datetime.strptime(match['date'] + ' ' + pf['dep_time'], '%Y-%m-%d %H:%M')
-                    except Exception:
-                        continue
+        function isExpired(date, depTime) {
+            const depDateTime = new Date(date + 'T' + depTime + ':00');
+            return new Date() >= depDateTime;
+        }
 
-                    pilots = [c for c in pf['crew'] if re.match(r'^(P|W|PJZ)', c, re.I)]
-                    recipients = pilots[:2]
-                    emails = [WX_PILOT_MAP.get(r) for r in recipients if WX_PILOT_MAP.get(r)]
-                    if not emails:
-                        unmatched.append(f"{pf['flight']} {pf['dep_time']} (无邮箱)")
-                        continue
+        function updateLinkColor(link) {
+            const date = link.dataset.date;
+            const depTime = link.dataset.depTime;
+            if (!date || !depTime) return;
+            const mailId = link.dataset.mailId;
+            const depDateTime = new Date(date + 'T' + depTime + ':00');
+            const now = new Date();
+            const threeHoursBefore = new Date(depDateTime.getTime() - 3 * 60 * 60 * 1000);
+            if (now >= depDateTime) { link.style.display = 'none'; return; }
+            else { link.style.display = 'block'; }
+            if (clickedSet.has(mailId)) {
+                link.style.backgroundColor = '#c8e6c9';
+                link.style.borderColor = '#4caf50';
+            } else if (now >= threeHoursBefore) {
+                link.style.backgroundColor = '#fff9c4';
+                link.style.borderColor = '#fbc02d';
+            } else {
+                link.style.backgroundColor = '#f0f0f0';
+                link.style.borderColor = '#ccc';
+            }
+        }
 
-                    d = datetime.strptime(match['date'], '%Y-%m-%d')
-                    date_text = f"{d.day:02d}{WX_MONTHS[d.month-1]}"
-                    subject = f"WX AND NOTAM {pf['flight']} {match['dep']}-{match['arr']} {date_text}"
-                    mailto = "mailto:" + ";".join(emails) + "?subject=" + quote(subject)
+        function generate() {
+            const outputDiv = document.getElementById('output');
+            outputDiv.innerHTML = '';
+            if (flightRows.length === 0) { outputDiv.innerHTML = '<p class="error">请先上传航段表</p>'; return; }
+            const planText = document.getElementById('planText').value;
+            const planFlights = parsePlan(planText);
+            if (planFlights.length === 0) { outputDiv.innerHTML = '<p class="error">未解析到文本飞行计划</p>'; return; }
 
-                    mail_id = f"{pf['flight']}_{match['date']}_{pf['dep_time']}"
-                    result.append({
-                        'mail_id': mail_id,
-                        'dep_dt': dep_dt,
-                        'mailto': mailto,
-                        'text': f"{pf['flight']} {match['dep']}-{match['arr']} {pf['dep_time']}-{pf['arr_time']} → {', '.join(recipients)}",
-                    })
+            let count = 0;
+            planFlights.forEach(pf => {
+                const matches = flightRows.filter(f => f.flight === pf.flight && f.depTime === pf.depTime);
+                const match = matches[0];
+                if (!match) {
+                    outputDiv.innerHTML += '<p class="error">航班 ' + pf.flight + ' ' + pf.depTime + ' 在航段表中未找到</p>';
+                    return;
+                }
+                if (isExpired(match.date, pf.depTime)) return;
 
-                st.session_state.wx_flights = result
-                if unmatched:
-                    st.warning("以下航班未匹配到航段表或邮箱：\n" + "\n".join(unmatched))
-                if not result:
-                    st.warning("未生成任何邮件，请检查航班号和起飞时间是否与航段表一致。")
+                const crewCodes = pf.crew.filter(c => /^(P|W|PJZ)/i.test(c));
+                const recipients = crewCodes.slice(0, 2);
+                if (recipients.length === 0) {
+                    outputDiv.innerHTML += '<p class="error">航班 ' + pf.flight + ' 未找到飞行员</p>';
+                    return;
+                }
+                const emails = recipients.map(id => pilotMap[id]).filter(e => e);
+                if (emails.length === 0) {
+                    outputDiv.innerHTML += '<p class="error">航班 ' + pf.flight + ' 的飞行员没有邮箱记录</p>';
+                    return;
+                }
 
-    if st.session_state.wx_flights:
-        wx_now_dt = wx_now()
-        shown = 0
-        to_delete = []
-        for f in st.session_state.wx_flights:
-            dep_dt = f['dep_dt']
-            if wx_now_dt >= dep_dt:
-                continue
-            shown += 1
-            three_h = dep_dt - timedelta(hours=3)
-            color = '#fff9c4' if wx_now_dt >= three_h else '#f0f0f0'
+                const dateText = convertDate(match.date);
+                const subject = 'WX AND NOTAM ' + pf.flight + ' ' + match.depICAO + '-' + match.arrICAO + ' ' + dateText;
+                const mailto = 'mailto:' + emails.join(';') + '?subject=' + encodeURIComponent(subject);
 
-            col1, col2 = st.columns([12, 1])
-            with col1:
-                st.markdown(
-                    f'<a href="{f["mailto"]}" target="_blank" style="display:block;padding:10px;'
-                    f'background:{color};border:1px solid #ccc;border-radius:4px;'
-                    f'text-decoration:none;color:#0066cc;">{f["text"]}</a>',
-                    unsafe_allow_html=True
-                )
-            with col2:
-                if st.button("✕", key=f"wx_del_{f['mail_id']}", help="删除此条"):
-                    to_delete.append(f['mail_id'])
+                const link = document.createElement('a');
+                link.href = mailto;
+                link.className = 'mail-link';
+                link.textContent = pf.flight + ' ' + match.depICAO + '-' + match.arrICAO + ' ' + pf.depTime + '-' + pf.arrTime + ' → ' + recipients.join(', ');
 
-        if to_delete:
-            st.session_state.wx_flights = [
-                x for x in st.session_state.wx_flights if x['mail_id'] not in to_delete
-            ]
-            st.rerun()
+                const mailId = pf.flight + '_' + match.date + '_' + pf.depTime;
+                link.dataset.mailId = mailId;
+                link.dataset.date = match.date;
+                link.dataset.depTime = pf.depTime;
 
-        if shown == 0:
-            st.info("所有邮件都已过期或已手动删除。")
-    else:
-        st.info("请上传航段表并粘贴文本飞行计划，然后点击生成。")
+                link.addEventListener('click', function() {
+                    clickedSet.add(mailId);
+                    try { localStorage.setItem('clickedMails', JSON.stringify([...clickedSet])); } catch(e) {}
+                    updateLinkColor(link);
+                });
+
+                outputDiv.appendChild(link);
+                outputDiv.appendChild(document.createElement('br'));
+                updateLinkColor(link);
+                count++;
+            });
+
+            if (count === 0) {
+                outputDiv.innerHTML += '<p class="success">没有需要生成的有效邮件（可能都已过期）</p>';
+            }
+        }
+
+        setInterval(() => {
+            document.querySelectorAll('.mail-link').forEach(link => updateLinkColor(link));
+        }, 60000);
+
+        initPilotMap();
+    </script>
+</body>
+</html>
+"""
+    components.html(WX_HTML, height=1000, scrolling=True)
 
 
 # ==============================
