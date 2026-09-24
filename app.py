@@ -2424,13 +2424,9 @@ def run_feature_f():
     <title>世界时行程转换</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
-        h2 { margin: 6px 0 10px 0; font-size: 20px; }
-        h3 { margin: 16px 0 8px 0; font-size: 16px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:15px; }
         input[type=file] { padding: 6px; }
-        button { padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
-        button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
-        button.primary:hover { background:#e63939; }
+        button { padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
         button:hover { background:#f5f5f5; }
         .reg-block { margin-bottom: 18px; }
         .reg-title { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
@@ -2441,11 +2437,10 @@ def run_feature_f():
             font-size: 14px; line-height: 1.8; color:#222;
         }
         .seg-line { padding: 2px 0; }
-        .status { color:#555; font-size: 13px; margin-left: 8px; }
+        .status { color:#555; font-size: 14px; margin-left: 8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
         .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
         .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
-        .toolbar { margin: 8px 0 12px 0; }
         details { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
         summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
         ol { margin: 6px 0 6px 20px; padding: 0; }
@@ -2459,20 +2454,10 @@ def run_feature_f():
     </style>
 </head>
 <body>
-    <h2>🌐 世界时行程</h2>
-    <p>从 Jetops 系统导出的北京时间行程 Excel 转换为世界时（UTC），便于复制粘贴。</p>
-    <p>💡 上传结果和历史记录会自动保存在浏览器，关闭后再打开仍保留。</p>
-
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div id="status"></div>
 
     <div id="result" style="display:none;">
-        <div class="toolbar">
-            <button class="primary" id="copyAllBtn">📋 复制全部计划</button>
-            <span class="status" id="copyAllStatus"></span>
-        </div>
-
-        <h3>📋 生成的飞行计划（红色为新增/变更）</h3>
         <div id="plans"></div>
 
         <details>
@@ -2728,14 +2713,12 @@ def run_feature_f():
                 const block = document.createElement('div');
                 block.className = 'reg-block';
 
-                // 标题行：机号 + 变更标记 + 复制按钮
                 const titleDiv = document.createElement('div');
                 titleDiv.className = 'reg-title';
                 titleDiv.innerHTML = '✈️ ' + escapeHtml(reg) +
                     (hasChanges ? '<span class="new-flag">🔴 有新增或变更</span>' : '');
                 block.appendChild(titleDiv);
 
-                // 每条航段独立成 div，绝对不会挤在一起
                 const segList = document.createElement('div');
                 segList.className = 'seg-list';
                 routes.forEach(line => {
@@ -2746,11 +2729,8 @@ def run_feature_f():
                 });
                 block.appendChild(segList);
 
-                // 单条机号的复制按钮
                 const copyBtn = document.createElement('button');
                 copyBtn.textContent = '📋 复制该飞机';
-                copyBtn.style.marginTop = '6px';
-                copyBtn.style.fontSize = '12px';
                 copyBtn.onclick = () => {
                     const copyText = reg + '\n' + routes.join('\n');
                     navigator.clipboard.writeText(copyText).then(() => {
@@ -2857,7 +2837,6 @@ def run_feature_f():
             reader.readAsArrayBuffer(file);
         }
 
-        // 页面加载：自动恢复上次结果
         window.addEventListener('DOMContentLoaded', () => {
             const lastPlans = loadJSON(LAST_PLANS_KEY);
             const lastFile = loadJSON(LAST_FILE_KEY);
@@ -2889,25 +2868,11 @@ def run_feature_f():
             } catch (e) {}
             location.reload();
         });
-
-        document.getElementById('copyAllBtn').addEventListener('click', async () => {
-            const status = document.getElementById('copyAllStatus');
-            const text = document.getElementById('fullTextBox').textContent;
-            try {
-                await navigator.clipboard.writeText(text);
-                status.textContent = '✅ 已复制';
-                status.style.color = '#2e7d32';
-            } catch (e) {
-                fallbackCopy(text);
-                status.textContent = '✅ 已复制（降级模式）';
-                status.style.color = '#2e7d32';
-            }
-        });
     </script>
 </body>
 </html>
 """
-    components.html(F_HTML, height=1300, scrolling=True)
+    components.html(F_HTML, height=1000, scrolling=True)
 
 
 # ==============================
