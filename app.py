@@ -3236,22 +3236,22 @@ def run_feature_chk():
     <title>检查单 & 填写脚本生成器</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
-        h2 { margin: 8px 0 10px 0; font-size: 20px; }
-        h3 { margin: 18px 0 8px 0; font-size: 16px; }
-        input[type=file] { padding: 6px; }
-        button { padding: 8px 16px; font-size: 14px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
+        h2 { margin: 8px 0 10px 0; font-size: 22px; }
+        h3 { margin: 18px 0 8px 0; font-size: 18px; }
+        input[type=file] { padding: 6px; font-size: 15px; }
+        button { padding: 8px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
         button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
         button.primary:hover { background:#e63939; }
         button:hover { background:#f5f5f5; }
         button.primary:hover { background:#e63939; }
-        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:12px; white-space: pre-wrap; word-break: break-all; max-height: 350px; overflow-y:auto; border:1px solid #e0e0e0; }
-        .status { color:#555; font-size:13px; margin-left:8px; }
+        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:14px; white-space: pre-wrap; word-break: break-all; max-height: 350px; overflow-y:auto; border:1px solid #e0e0e0; }
+        .status { color:#555; font-size:14px; margin-left:8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
         .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
         .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
         details { margin: 8px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
-        summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+        summary { cursor: pointer; font-weight: bold; padding: 4px 0; font-size: 16px; }
         table { border-collapse: collapse; }
     </style>
 </head>
@@ -3264,7 +3264,7 @@ def run_feature_chk():
     <div id="result" style="display:none;">
         <div id="summary"></div>
 
-        <h3>📋 检查单（一键复制保留 Times New Roman 14pt 格式）</h3>
+        <h3>📋 检查单（一键复制保留 Times New Roman 16pt 格式）</h3>
         <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
         <span class="status" id="copyStatus"></span>
         <div id="checklistPreview" style="margin-top:10px; border:1px solid #ddd; border-radius:4px; max-height:500px; overflow-y:auto; padding:4px; background:#fff;"></div>
@@ -3513,7 +3513,7 @@ def run_feature_chk():
         }
 
         // ============ 渲染 ============
-        const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:14pt; border:1px solid #000000; padding:2px 6px;";
+        const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:16pt; border:1px solid #000000; padding:2px 6px;";
 
         function renderResult(chkFlights, chkRows, chkRawItems) {
             currentChkRows = chkRows;
@@ -3565,7 +3565,7 @@ def run_feature_chk():
                         'text/plain': new Blob([plain], { type: 'text/plain' })
                     })
                 ]);
-                status.textContent = '✅ 已复制（可直接粘贴到 Word，保留 Times New Roman 格式）';
+                status.textContent = '✅ 已复制（可直接粘贴到 Word，保留 Times New Roman 16pt 格式）';
                 status.style.color = '#2e7d32';
             } catch (e) {
                 try {
