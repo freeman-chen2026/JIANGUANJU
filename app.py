@@ -2424,26 +2424,38 @@ def run_feature_f():
     <title>世界时行程转换</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 10px; color:#333; font-size:14px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
         h2 { margin: 6px 0 10px 0; font-size: 20px; }
-        h3 { margin: 14px 0 8px 0; font-size: 16px; }
+        h3 { margin: 16px 0 8px 0; font-size: 16px; }
         input[type=file] { padding: 6px; }
         button { padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
         button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
         button.primary:hover { background:#e63939; }
         button:hover { background:#f5f5f5; }
-        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:12.5px; white-space: pre-wrap; word-break: break-all; border:1px solid #e0e0e0; margin: 4px 0 8px 0; }
-        .reg-block { margin-top: 12px; }
-        .reg-title { font-weight: bold; margin-bottom: 4px; }
+        .reg-block { margin-bottom: 18px; }
+        .reg-title { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
+        .new-flag { color:#d32f2f; font-size: 0.9rem; margin-left:8px; font-weight: normal; }
+        .seg-list {
+            background:#f7f7f7; border: 1px solid #ddd; border-radius: 6px;
+            padding: 8px 12px; font-family: Consolas, "Courier New", monospace;
+            font-size: 14px; line-height: 1.8; color:#222;
+        }
+        .seg-line { padding: 2px 0; }
         .status { color:#555; font-size: 13px; margin-left: 8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
         .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
         .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
-        .new-flag { color:#d32f2f; font-size: 0.9rem; margin-left:6px; }
+        .toolbar { margin: 8px 0 12px 0; }
         details { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
         summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
         ol { margin: 6px 0 6px 20px; padding: 0; }
         li { margin: 2px 0; }
+        .full-text-box {
+            background:#f5f5f5; padding:10px; border-radius:4px;
+            font-family: Consolas, "Courier New", monospace; font-size: 14px;
+            white-space: pre; overflow-x: auto; border:1px solid #e0e0e0;
+            max-height: 400px; overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -2455,20 +2467,23 @@ def run_feature_f():
     <div id="status"></div>
 
     <div id="result" style="display:none;">
+        <div class="toolbar">
+            <button class="primary" id="copyAllBtn">📋 复制全部计划</button>
+            <span class="status" id="copyAllStatus"></span>
+        </div>
+
         <h3>📋 生成的飞行计划（红色为新增/变更）</h3>
         <div id="plans"></div>
 
         <details>
             <summary>📦 全部计划合并（点击展开）</summary>
-            <button id="copyAllBtn">📋 复制全部</button>
-            <span class="status" id="copyAllStatus"></span>
-            <div class="code-block" id="fullText"></div>
+            <div class="full-text-box" id="fullTextBox"></div>
         </details>
 
         <details>
             <summary>📜 历史记录</summary>
             <div id="historyList"></div>
-            <button id="clearHistoryBtn">🗑️ 清除所有历史</button>
+            <button id="clearHistoryBtn" style="margin-top:8px;">🗑️ 清除所有历史</button>
         </details>
     </div>
 
@@ -2476,9 +2491,9 @@ def run_feature_f():
         // ======================= 常量 =======================
         const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
         const PRIORITY = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R'];
-        const HISTORY_KEY = 'worldtime_history_v1';
-        const LAST_PLANS_KEY = 'worldtime_last_plans_v1';
-        const LAST_FILE_KEY = 'worldtime_last_file_v1';
+        const HISTORY_KEY = 'worldtime_history_v2';
+        const LAST_PLANS_KEY = 'worldtime_last_plans_v2';
+        const LAST_FILE_KEY = 'worldtime_last_file_v2';
 
         // ======================= localStorage 封装 =======================
         function loadHistory() {
@@ -2513,7 +2528,6 @@ def run_feature_f():
             if (v == null || v === '') return null;
             if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
             if (typeof v === 'number') {
-                // Excel 日期序列号 → UTC 天数 → 取年月日
                 const ms = Math.round((v - 25569) * 86400 * 1000);
                 const d = new Date(ms);
                 return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
@@ -2542,8 +2556,6 @@ def run_feature_f():
             return null;
         }
 
-        // 把「日期 + HH:MM」当作北京时间标签，减去 8 小时得到 UTC 标签
-        // 返回 {day, month, hours, minutes, sortKey}
         function toUTCLabel(dateVal, timeStr) {
             const d = parseDate(dateVal);
             if (!d || !timeStr) return null;
@@ -2580,7 +2592,6 @@ def run_feature_f():
 
         // ======================= 核心处理 =======================
         function processRows(rows) {
-            // 找表头
             let headerIdx = -1;
             for (let i = 0; i < Math.min(rows.length, 10); i++) {
                 const vals = rows[i].map(v => String(v).trim());
@@ -2711,24 +2722,54 @@ def run_feature_f():
             for (const reg in plans) {
                 const text = plans[reg];
                 const lines = text.split('\n');
-                const hasChanges = !isRestored && lines.some(line => line !== reg && changes[reg + '\u0001' + line]);
+                const routes = lines.filter(l => l !== reg);
+                const hasChanges = !isRestored && routes.some(line => changes[reg + '\u0001' + line]);
 
+                const block = document.createElement('div');
+                block.className = 'reg-block';
+
+                // 标题行：机号 + 变更标记 + 复制按钮
                 const titleDiv = document.createElement('div');
                 titleDiv.className = 'reg-title';
                 titleDiv.innerHTML = '✈️ ' + escapeHtml(reg) +
                     (hasChanges ? '<span class="new-flag">🔴 有新增或变更</span>' : '');
-                container.appendChild(titleDiv);
+                block.appendChild(titleDiv);
 
-                const code = document.createElement('div');
-                code.className = 'code-block';
-                const plainLines = lines.filter(l => l !== reg);
-                code.textContent = plainLines.join('\n');
-                container.appendChild(code);
+                // 每条航段独立成 div，绝对不会挤在一起
+                const segList = document.createElement('div');
+                segList.className = 'seg-list';
+                routes.forEach(line => {
+                    const lineDiv = document.createElement('div');
+                    lineDiv.className = 'seg-line';
+                    lineDiv.textContent = line;
+                    segList.appendChild(lineDiv);
+                });
+                block.appendChild(segList);
 
-                fullText += text + '\n\n';
+                // 单条机号的复制按钮
+                const copyBtn = document.createElement('button');
+                copyBtn.textContent = '📋 复制该飞机';
+                copyBtn.style.marginTop = '6px';
+                copyBtn.style.fontSize = '12px';
+                copyBtn.onclick = () => {
+                    const copyText = routes.join('\n');
+                    navigator.clipboard.writeText(copyText).then(() => {
+                        copyBtn.textContent = '✅ 已复制';
+                        setTimeout(() => { copyBtn.textContent = '📋 复制该飞机'; }, 1500);
+                    }).catch(() => {
+                        fallbackCopy(copyText);
+                        copyBtn.textContent = '✅ 已复制';
+                        setTimeout(() => { copyBtn.textContent = '📋 复制该飞机'; }, 1500);
+                    });
+                };
+                block.appendChild(copyBtn);
+
+                container.appendChild(block);
+
+                fullText += reg + '\n' + routes.join('\n') + '\n\n';
             }
 
-            document.getElementById('fullText').textContent = fullText;
+            document.getElementById('fullTextBox').textContent = fullText.trim();
         }
 
         function renderHistory(history) {
@@ -2743,6 +2784,17 @@ def run_feature_f():
             }
             html += '</ol>';
             container.innerHTML = html;
+        }
+
+        function fallbackCopy(text) {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) {}
+            document.body.removeChild(ta);
         }
 
         // ======================= 主流程 =======================
@@ -2789,7 +2841,6 @@ def run_feature_f():
                     }
                     saveHistory(history);
 
-                    // 关键：把「上次结果」也写 localStorage，用于"不过期"
                     saveJSON(LAST_PLANS_KEY, sortedNewPlans);
                     saveJSON(LAST_FILE_KEY, {name: file.name, timestamp: timestamp});
 
@@ -2841,25 +2892,15 @@ def run_feature_f():
 
         document.getElementById('copyAllBtn').addEventListener('click', async () => {
             const status = document.getElementById('copyAllStatus');
-            const text = document.getElementById('fullText').textContent;
+            const text = document.getElementById('fullTextBox').textContent;
             try {
                 await navigator.clipboard.writeText(text);
                 status.textContent = '✅ 已复制';
                 status.style.color = '#2e7d32';
             } catch (e) {
-                const ta = document.createElement('textarea');
-                ta.value = text;
-                document.body.appendChild(ta);
-                ta.select();
-                try {
-                    document.execCommand('copy');
-                    status.textContent = '✅ 已复制（降级模式）';
-                    status.style.color = '#2e7d32';
-                } catch (e2) {
-                    status.textContent = '❌ 复制失败：' + e.message;
-                    status.style.color = '#d32f2f';
-                }
-                document.body.removeChild(ta);
+                fallbackCopy(text);
+                status.textContent = '✅ 已复制（降级模式）';
+                status.style.color = '#2e7d32';
             }
         });
     </script>
