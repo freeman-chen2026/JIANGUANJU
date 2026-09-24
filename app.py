@@ -3190,7 +3190,7 @@ def run_feature_g():
 
 
 # ==============================
-# 功能 H：检查单/脚本生成器（HTML/JS 沙箱版）
+# 功能 H：检查单/脚本生成器（HTML/JS 沙箱版 + localStorage 持久化）
 # ==============================
 def run_feature_chk():
     CHK_HTML = r"""
@@ -3210,6 +3210,8 @@ def run_feature_chk():
         button.primary:hover { background:#e63939; }
         button:hover { background:#f5f5f5; }
         button.primary:hover { background:#e63939; }
+        button.danger { background:#fff; color:#d32f2f; border-color:#ef9a9a; }
+        button.danger:hover { background:#ffebee; }
         .code-block { background:#f5f5f5; padding:12px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:16px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y:auto; border:1px solid #e0e0e0; }
         .status { color:#555; font-size:15px; margin-left:8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
@@ -3219,6 +3221,7 @@ def run_feature_chk():
         summary { cursor: pointer; font-weight: bold; padding: 6px 0; font-size: 18px; }
         .pp-aircraft { font-weight: bold; font-size: 17px; margin: 10px 0 6px 0; }
         table { border-collapse: collapse; }
+        .toolbar { margin: 10px 0; }
     </style>
 </head>
 <body>
@@ -3229,6 +3232,10 @@ def run_feature_chk():
 
     <div id="result" style="display:none;">
         <div id="summary"></div>
+
+        <div class="toolbar">
+            <button class="danger" id="clearCacheBtn">🗑️ 清除缓存</button>
+        </div>
 
         <h3>📋 检查单（一键复制保留 Times New Roman 16pt 格式）</h3>
         <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
@@ -3253,9 +3260,40 @@ def run_feature_chk():
         CHK_PREFERRED.forEach((ac, i) => chkPriority[ac] = i);
         const chkDefaultPri = CHK_PREFERRED.length;
 
+        // localStorage 存储 key
+        const CHK_CACHE_KEY = 'chk_last_result_v1';
+
         let currentChkRows = [];
         let currentChkFlights = [];
+        let currentChkRawItems = [];
         let currentJsScript = '';
+
+        // ============ localStorage 封装 ============
+        function saveCache(fileName) {
+            try {
+                const now = new Date();
+                const timestamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
+                                  ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+                const payload = {
+                    timestamp: timestamp,
+                    filename: fileName,
+                    chkRows: currentChkRows,
+                    chkFlights: currentChkFlights,
+                    chkRawItems: currentChkRawItems,
+                    count: currentChkRawItems.length
+                };
+                localStorage.setItem(CHK_CACHE_KEY, JSON.stringify(payload));
+            } catch (e) { console.error('保存缓存失败：', e); }
+        }
+        function loadCache() {
+            try {
+                const raw = localStorage.getItem(CHK_CACHE_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+        function clearCache() {
+            try { localStorage.removeItem(CHK_CACHE_KEY); } catch (e) {}
+        }
 
         // ============ 工具函数 ============
         function pad2(n) { return String(n).padStart(2, '0'); }
@@ -3321,7 +3359,7 @@ def run_feature_chk():
             const reader = new FileReader();
             reader.onload = (ev) => {
                 try {
-                    processWorkbook(ev.target.result);
+                    processWorkbook(ev.target.result, file.name);
                 } catch (err) {
                     showError('处理失败：' + err.message);
                     console.error(err);
@@ -3330,7 +3368,7 @@ def run_feature_chk():
             reader.readAsArrayBuffer(file);
         });
 
-        function processWorkbook(data) {
+        function processWorkbook(data, fileName) {
             const wb = XLSX.read(data, { type: 'array', cellDates: true });
             const ws = wb.Sheets[wb.SheetNames[0]];
             const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
@@ -3474,23 +3512,26 @@ def run_feature_chk():
                 first = false;
             }
 
-            renderResult(chkFlights, chkRows, chkRawItems);
+            currentChkRows = chkRows;
+            currentChkFlights = chkFlights;
+            currentChkRawItems = chkRawItems;
+
+            renderAll();
+            saveCache(fileName);
+
+            const status = document.getElementById('status');
+            status.innerHTML = '<div class="success">✅ 文件读取成功：' + escapeHtml(fileName) + '（已自动缓存）</div>';
         }
 
         // ============ 渲染 ============
         const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:16pt; border:1px solid #000000; padding:2px 6px;";
 
-        function renderResult(chkFlights, chkRows, chkRawItems) {
-            currentChkRows = chkRows;
-            currentChkFlights = chkFlights;
-
+        function renderAll() {
             document.getElementById('result').style.display = 'block';
             document.getElementById('summary').innerHTML =
-                '<div class="success">✅ 成功解析 ' + chkRawItems.length + ' 条检查单记录，' + chkFlights.length + ' 条 PRELIM/PACKAGE 航段</div>';
-
-            renderPrelimPackage(chkFlights);
-            generateJsScript(chkFlights);
-
+                '<div class="success">✅ 成功解析 ' + currentChkRawItems.length + ' 条检查单记录，' + currentChkFlights.length + ' 条 PRELIM/PACKAGE 航段</div>';
+            renderPrelimPackage(currentChkFlights);
+            generateJsScript(currentChkFlights);
             document.getElementById('copyBtn').onclick = copyChecklist;
             document.getElementById('copyJsBtn').onclick = copyJsScript;
         }
@@ -3561,7 +3602,7 @@ def run_feature_chk():
 
         function renderPrelimPackage(flights) {
             const container = document.getElementById('prelimPackage');
-            if (flights.length === 0) {
+            if (!flights || flights.length === 0) {
                 container.innerHTML = '<div class="info">无 PRELIM/PACKAGE 数据</div>';
                 return;
             }
@@ -3607,6 +3648,11 @@ def run_feature_chk():
         }
 
         function generateJsScript(flights) {
+            if (!flights || flights.length === 0) {
+                currentJsScript = '// 无 PRELIM/PACKAGE 数据，未生成填充脚本';
+                document.getElementById('jsScript').textContent = currentJsScript;
+                return;
+            }
             const template = [
 'var flightData = __FLIGHT_DATA__;',
 'var currentIndex = 0;',
@@ -3672,8 +3718,32 @@ def run_feature_chk():
         function showError(msg) {
             const status = document.getElementById('status');
             status.innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
-            document.getElementById('result').style.display = 'none';
         }
+
+        // ============ 页面加载：自动恢复上次结果 ============
+        window.addEventListener('DOMContentLoaded', () => {
+            const cache = loadCache();
+            if (cache && cache.chkRows && cache.chkRows.length > 0) {
+                currentChkRows = cache.chkRows || [];
+                currentChkFlights = cache.chkFlights || [];
+                currentChkRawItems = cache.chkRawItems || [];
+
+                renderAll();
+
+                const status = document.getElementById('status');
+                const info = cache.filename
+                    ? '（上次加载：' + escapeHtml(cache.filename) + '，' + escapeHtml(cache.timestamp) + '）'
+                    : '';
+                status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
+            }
+        });
+
+        // ============ 清除缓存按钮 ============
+        document.getElementById('clearCacheBtn').addEventListener('click', () => {
+            if (!confirm('确定清除当前缓存的检查单数据吗？')) return;
+            clearCache();
+            location.reload();
+        });
     </script>
 </body>
 </html>
