@@ -3267,7 +3267,6 @@ def run_feature_chk():
         <h3>📋 检查单（一键复制保留 Times New Roman 16pt 格式）</h3>
         <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
         <span class="status" id="copyStatus"></span>
-        <div id="checklistPreview" style="margin-top:10px; border:1px solid #ddd; border-radius:4px; max-height:500px; overflow-y:auto; padding:4px; background:#fff;"></div>
 
         <h3>📦 PRELIM / PACKAGE</h3>
         <div id="prelimPackage"></div>
@@ -3522,19 +3521,6 @@ def run_feature_chk():
             document.getElementById('result').style.display = 'block';
             document.getElementById('summary').innerHTML =
                 '<div class="success">✅ 成功解析 ' + chkRawItems.length + ' 条检查单记录，' + chkFlights.length + ' 条 PRELIM/PACKAGE 航段</div>';
-
-            const preview = document.getElementById('checklistPreview');
-            let html = '<table style="border-collapse:collapse; width:100%;">';
-            for (const row of chkRows) {
-                if (row.type === 'blank') {
-                    html += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
-                } else {
-                    const content = row.content.split('\n').map(escapeHtml).join('<br>');
-                    html += '<tr><td style="' + TD_STYLE + '">' + content + '</td></tr>';
-                }
-            }
-            html += '</table>';
-            preview.innerHTML = html;
 
             renderPrelimPackage(chkFlights);
             generateJsScript(chkFlights);
