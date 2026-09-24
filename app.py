@@ -2752,7 +2752,7 @@ def run_feature_f():
                 copyBtn.style.marginTop = '6px';
                 copyBtn.style.fontSize = '12px';
                 copyBtn.onclick = () => {
-                    const copyText = routes.join('\n');
+                    const copyText = reg + '\n' + routes.join('\n');
                     navigator.clipboard.writeText(copyText).then(() => {
                         copyBtn.textContent = '✅ 已复制';
                         setTimeout(() => { copyBtn.textContent = '📋 复制该飞机'; }, 1500);
