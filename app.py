@@ -3203,20 +3203,21 @@ def run_feature_chk():
     <style>
         body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
         h2 { margin: 8px 0 10px 0; font-size: 22px; }
-        h3 { margin: 18px 0 8px 0; font-size: 18px; }
+        h3 { margin: 18px 0 8px 0; font-size: 19px; }
         input[type=file] { padding: 6px; font-size: 15px; }
-        button { padding: 8px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
+        button { padding: 10px 18px; font-size: 16px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
         button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
         button.primary:hover { background:#e63939; }
         button:hover { background:#f5f5f5; }
         button.primary:hover { background:#e63939; }
-        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:14px; white-space: pre-wrap; word-break: break-all; max-height: 350px; overflow-y:auto; border:1px solid #e0e0e0; }
-        .status { color:#555; font-size:14px; margin-left:8px; }
-        .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
-        .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
-        .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
-        details { margin: 8px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
-        summary { cursor: pointer; font-weight: bold; padding: 4px 0; font-size: 16px; }
+        .code-block { background:#f5f5f5; padding:12px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:16px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y:auto; border:1px solid #e0e0e0; }
+        .status { color:#555; font-size:15px; margin-left:8px; }
+        .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
+        .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
+        .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
+        details { margin: 10px 0; padding: 10px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
+        summary { cursor: pointer; font-weight: bold; padding: 6px 0; font-size: 18px; }
+        .pp-aircraft { font-weight: bold; font-size: 17px; margin: 10px 0 6px 0; }
         table { border-collapse: collapse; }
     </style>
 </head>
@@ -3586,7 +3587,7 @@ def run_feature_chk():
             });
             let html = '';
             for (const dateBj of sortedDates) {
-                html += '<details><summary>📅 ' + dateBj + '</summary>';
+                html += '<details open><summary>📅 ' + dateBj + '</summary>';
                 const acGroups = dateGroups[dateBj];
                 const sortedAcs = Object.keys(acGroups).sort((a, b) => {
                     const pa = chkPriority[a] !== undefined ? chkPriority[a] : chkDefaultPri;
@@ -3598,7 +3599,7 @@ def run_feature_chk():
                     const prelims = items.map(f => 'PRELIM ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
                     const packages = items.map(f => 'PACKAGE ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
                     const block = prelims.join('\n') + '\n\n' + packages.join('\n');
-                    html += '<div style="margin:8px 0;"><b>' + ac + '</b><div class="code-block">' + escapeHtml(block) + '</div></div>';
+                    html += '<div class="pp-aircraft">' + ac + '</div><div class="code-block">' + escapeHtml(block) + '</div>';
                 }
                 html += '</details>';
             }
@@ -3677,7 +3678,7 @@ def run_feature_chk():
 </body>
 </html>
 """
-    components.html(CHK_HTML, height=1500, scrolling=True)
+    components.html(CHK_HTML, height=1600, scrolling=True)
 
 
 # ==============================
