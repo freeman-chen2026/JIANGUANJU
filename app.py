@@ -3727,23 +3727,37 @@ def run_feature_wx_mail():
     <title>飞行任务邮件生成器</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 10px; color:#333; font-size:14px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:14px; }
         h2 { margin: 6px 0 10px 0; font-size:20px; }
+        h3 { margin: 14px 0 8px 0; font-size: 16px; }
         textarea { width: 100%; height: 160px; box-sizing: border-box; font-family: Consolas, monospace; font-size:13px; padding:6px; }
-        #output { margin-top: 20px; }
+        #mailList { margin-top: 12px; }
+        .mail-row {
+            display: flex; align-items: stretch; margin: 6px 0; gap: 6px;
+        }
         .mail-link {
-            display: block; margin: 5px 0; padding: 10px;
+            flex: 1; padding: 10px; box-sizing: border-box;
             border-radius: 4px; text-decoration: none; color: #0066cc;
             border: 1px solid #ccc; background: #f0f0f0;
             transition: background 0.3s; font-size:14px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .mail-link:hover { filter: brightness(0.95); }
+        .del-btn {
+            padding: 0 14px; font-size: 15px; border-radius: 4px;
+            border: 1px solid #ddd; background: #fff; color: #888;
+            cursor: pointer; transition: all 0.2s; flex-shrink: 0;
+        }
+        .del-btn:hover { background: #ffebee; color: #d32f2f; border-color: #ef9a9a; }
         .error { color: red; padding:6px; background:#ffebee; border-radius:4px; margin:4px 0; }
         .success { color:#2e7d32; padding:6px; background:#e8f5e9; border-radius:4px; margin:6px 0; }
-        button { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; margin-right:6px; }
-        button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight:bold; }
+        .info { color:#1976d2; padding:6px; background:#e3f2fd; border-radius:4px; margin:6px 0; }
+        button.primary { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ff4b4b; background:#ff4b4b; color:#fff; cursor:pointer; margin-right:6px; font-weight:bold; }
         button.primary:hover { background:#e63939; }
+        button { padding: 8px 16px; font-size:14px; border-radius:6px; border:1px solid #ddd; background:#fff; cursor:pointer; margin-right:6px; }
+        button:hover { background:#f5f5f5; }
         input[type=file] { padding:6px; }
+        .toolbar { margin: 10px 0; }
     </style>
 </head>
 <body>
@@ -3762,10 +3776,15 @@ B65AP 07:30 - 09:00
 P032,P036,C050,M021
 ..."></textarea>
 
-    <br><br>
-    <button class="primary" onclick="generate()">生成邮件链接</button>
-    <button onclick="location.reload()">🔄 刷新列表</button>
+    <div class="toolbar">
+        <button class="primary" onclick="generate()">生成邮件链接</button>
+        <button onclick="renderMails()">🔄 刷新列表</button>
+        <button onclick="clearAllMails()">🗑️ 清空全部</button>
+    </div>
     <div id="output"></div>
+
+    <h3>📬 待处理邮件列表</h3>
+    <div id="mailList"></div>
 
     <script>
         const PILOT_CSV = `工号,姓名,邮箱
@@ -3826,12 +3845,27 @@ W268,"Daniel, RICHTER",pilotlocalizer@gmail.com
 W270,杨涛,yang_tao2005@aliyun.com
 W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
 
+        const CLICKED_KEY = 'clickedMails';
+        const MAILS_KEY = 'wx_generated_mails_v1';
+
         let pilotMap = {};
         let flightRows = [];
         let clickedSet = new Set();
+        let generatedMails = [];
+
         try {
-            clickedSet = new Set(JSON.parse(localStorage.getItem('clickedMails') || '[]'));
+            clickedSet = new Set(JSON.parse(localStorage.getItem(CLICKED_KEY) || '[]'));
         } catch (e) { clickedSet = new Set(); }
+
+        function saveMails() {
+            try { localStorage.setItem(MAILS_KEY, JSON.stringify(generatedMails)); } catch (e) {}
+        }
+        function loadMails() {
+            try {
+                const raw = localStorage.getItem(MAILS_KEY);
+                return raw ? JSON.parse(raw) : [];
+            } catch (e) { return []; }
+        }
 
         function parseCSV(text) {
             const rows = [];
@@ -3989,37 +4023,19 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             return new Date() >= depDateTime;
         }
 
-        function updateLinkColor(link) {
-            const date = link.dataset.date;
-            const depTime = link.dataset.depTime;
-            if (!date || !depTime) return;
-            const mailId = link.dataset.mailId;
-            const depDateTime = new Date(date + 'T' + depTime + ':00');
-            const now = new Date();
-            const threeHoursBefore = new Date(depDateTime.getTime() - 3 * 60 * 60 * 1000);
-            if (now >= depDateTime) { link.style.display = 'none'; return; }
-            else { link.style.display = 'block'; }
-            if (clickedSet.has(mailId)) {
-                link.style.backgroundColor = '#c8e6c9';
-                link.style.borderColor = '#4caf50';
-            } else if (now >= threeHoursBefore) {
-                link.style.backgroundColor = '#fff9c4';
-                link.style.borderColor = '#fbc02d';
-            } else {
-                link.style.backgroundColor = '#f0f0f0';
-                link.style.borderColor = '#ccc';
-            }
-        }
-
+        // ============ 生成邮件 ============
         function generate() {
             const outputDiv = document.getElementById('output');
             outputDiv.innerHTML = '';
+
             if (flightRows.length === 0) { outputDiv.innerHTML = '<p class="error">请先上传航段表</p>'; return; }
             const planText = document.getElementById('planText').value;
             const planFlights = parsePlan(planText);
             if (planFlights.length === 0) { outputDiv.innerHTML = '<p class="error">未解析到文本飞行计划</p>'; return; }
 
-            let count = 0;
+            const existingIds = new Set(generatedMails.map(m => m.mailId));
+            let added = 0, skipped = 0;
+
             planFlights.forEach(pf => {
                 const matches = flightRows.filter(f => f.flight === pf.flight && f.depTime === pf.depTime);
                 const match = matches[0];
@@ -4045,43 +4061,121 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
                 const subject = 'WX AND NOTAM ' + pf.flight + ' ' + match.depICAO + '-' + match.arrICAO + ' ' + dateText;
                 const mailto = 'mailto:' + emails.join(';') + '?subject=' + encodeURIComponent(subject);
 
-                const link = document.createElement('a');
-                link.href = mailto;
-                link.className = 'mail-link';
-                link.textContent = pf.flight + ' ' + match.depICAO + '-' + match.arrICAO + ' ' + pf.depTime + '-' + pf.arrTime + ' → ' + recipients.join(', ');
-
                 const mailId = pf.flight + '_' + match.date + '_' + pf.depTime;
-                link.dataset.mailId = mailId;
-                link.dataset.date = match.date;
-                link.dataset.depTime = pf.depTime;
+                if (existingIds.has(mailId)) { skipped++; return; }
 
-                link.addEventListener('click', function() {
-                    clickedSet.add(mailId);
-                    try { localStorage.setItem('clickedMails', JSON.stringify([...clickedSet])); } catch(e) {}
-                    updateLinkColor(link);
+                generatedMails.push({
+                    mailId: mailId,
+                    depDateTime: match.date + 'T' + pf.depTime + ':00',
+                    mailto: mailto,
+                    text: pf.flight + ' ' + match.depICAO + '-' + match.arrICAO + ' ' + pf.depTime + '-' + pf.arrTime + ' → ' + recipients.join(', ')
                 });
-
-                outputDiv.appendChild(link);
-                outputDiv.appendChild(document.createElement('br'));
-                updateLinkColor(link);
-                count++;
+                existingIds.add(mailId);
+                added++;
             });
 
-            if (count === 0) {
-                outputDiv.innerHTML += '<p class="success">没有需要生成的有效邮件（可能都已过期）</p>';
+            saveMails();
+            renderMails();
+
+            if (added > 0) {
+                outputDiv.innerHTML = '<p class="success">✅ 新增 ' + added + ' 条邮件' + (skipped > 0 ? '（' + skipped + ' 条已存在，自动跳过）' : '') + '</p>';
+            } else if (skipped > 0) {
+                outputDiv.innerHTML = '<p class="info">ℹ️ 所有邮件都已存在列表中，未新增</p>';
             }
         }
 
+        // ============ 渲染列表 ============
+        function renderMails() {
+            const container = document.getElementById('mailList');
+            container.innerHTML = '';
+
+            const now = new Date();
+            // 先自动移除已过期的
+            const alive = [];
+            for (const m of generatedMails) {
+                const depDt = new Date(m.depDateTime);
+                if (now >= depDt) continue;
+                alive.push(m);
+            }
+            if (alive.length !== generatedMails.length) {
+                generatedMails = alive;
+                saveMails();
+            }
+
+            if (generatedMails.length === 0) {
+                container.innerHTML = '<div class="info">📭 当前没有待处理的邮件。上传航段表并粘贴计划后点击「生成邮件链接」。</div>';
+                return;
+            }
+
+            for (const m of generatedMails) {
+                const row = document.createElement('div');
+                row.className = 'mail-row';
+
+                const link = document.createElement('a');
+                link.href = m.mailto;
+                link.className = 'mail-link';
+                link.textContent = m.text;
+                link.title = m.text;
+
+                const depDt = new Date(m.depDateTime);
+                const threeH = new Date(depDt.getTime() - 3 * 60 * 60 * 1000);
+                if (clickedSet.has(m.mailId)) {
+                    link.style.backgroundColor = '#c8e6c9';
+                    link.style.borderColor = '#4caf50';
+                } else if (now >= threeH) {
+                    link.style.backgroundColor = '#fff9c4';
+                    link.style.borderColor = '#fbc02d';
+                } else {
+                    link.style.backgroundColor = '#f0f0f0';
+                    link.style.borderColor = '#ccc';
+                }
+
+                link.addEventListener('click', function() {
+                    clickedSet.add(m.mailId);
+                    try { localStorage.setItem(CLICKED_KEY, JSON.stringify([...clickedSet])); } catch(e) {}
+                    setTimeout(renderMails, 100);
+                });
+
+                row.appendChild(link);
+
+                const del = document.createElement('button');
+                del.className = 'del-btn';
+                del.textContent = '✕';
+                del.title = '删除此条邮件';
+                del.onclick = () => {
+                    generatedMails = generatedMails.filter(x => x.mailId !== m.mailId);
+                    saveMails();
+                    renderMails();
+                };
+                row.appendChild(del);
+
+                container.appendChild(row);
+            }
+        }
+
+        function clearAllMails() {
+            if (!confirm('确定清空所有待处理邮件吗？')) return;
+            generatedMails = [];
+            saveMails();
+            renderMails();
+        }
+
+        // 定时器：每分钟自动刷新（隐藏过期、更新颜色）
         setInterval(() => {
-            document.querySelectorAll('.mail-link').forEach(link => updateLinkColor(link));
+            renderMails();
         }, 60000);
 
+        // 页面加载初始化
         initPilotMap();
+        generatedMails = loadMails();
+        window.addEventListener('DOMContentLoaded', () => {
+            renderMails();
+        });
     </script>
 </body>
 </html>
 """
-    components.html(WX_HTML, height=1000, scrolling=True)
+    components.html(WX_HTML, height=1100, scrolling=True)
 
 
 # ==============================
