@@ -3202,7 +3202,6 @@ def run_feature_chk():
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
-        h2 { margin: 8px 0 10px 0; font-size: 22px; }
         h3 { margin: 18px 0 8px 0; font-size: 19px; }
         input[type=file] { padding: 6px; font-size: 15px; }
         button { padding: 10px 18px; font-size: 16px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
@@ -3210,8 +3209,6 @@ def run_feature_chk():
         button.primary:hover { background:#e63939; }
         button:hover { background:#f5f5f5; }
         button.primary:hover { background:#e63939; }
-        button.danger { background:#fff; color:#d32f2f; border-color:#ef9a9a; }
-        button.danger:hover { background:#ffebee; }
         .code-block { background:#f5f5f5; padding:12px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:16px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y:auto; border:1px solid #e0e0e0; }
         .status { color:#555; font-size:15px; margin-left:8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
@@ -3225,8 +3222,6 @@ def run_feature_chk():
     </style>
 </head>
 <body>
-    <h2>📝 检查单 & 填写脚本生成器</h2>
-    <p>上传航班计划 Excel 文件，自动生成检查单、PRELIM/PACKAGE 和 JavaScript 脚本。</p>
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div id="status"></div>
 
@@ -3234,7 +3229,6 @@ def run_feature_chk():
         <div class="toolbar">
             <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
             <span class="status" id="copyStatus"></span>
-            <button class="danger" id="clearCacheBtn">🗑️ 清除缓存</button>
         </div>
 
         <h3>📦 PRELIM / PACKAGE</h3>
@@ -3285,9 +3279,6 @@ def run_feature_chk():
                 const raw = localStorage.getItem(CHK_CACHE_KEY);
                 return raw ? JSON.parse(raw) : null;
             } catch (e) { return null; }
-        }
-        function clearCache() {
-            try { localStorage.removeItem(CHK_CACHE_KEY); } catch (e) {}
         }
 
         // ============ 工具函数 ============
@@ -3731,19 +3722,11 @@ def run_feature_chk():
                 status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
             }
         });
-
-        // ============ 清除缓存按钮 ============
-        document.getElementById('clearCacheBtn').addEventListener('click', () => {
-            if (!confirm('确定清除当前缓存的检查单数据吗？')) return;
-            clearCache();
-            location.reload();
-        });
     </script>
 </body>
 </html>
 """
     components.html(CHK_HTML, height=1600, scrolling=True)
-
 
 # ==============================
 # 功能 I：WX AND NOTAM 邮件生成（HTML/JS 沙箱版）
