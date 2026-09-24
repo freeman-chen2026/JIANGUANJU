@@ -3221,7 +3221,7 @@ def run_feature_chk():
         summary { cursor: pointer; font-weight: bold; padding: 6px 0; font-size: 18px; }
         .pp-aircraft { font-weight: bold; font-size: 17px; margin: 10px 0 6px 0; }
         table { border-collapse: collapse; }
-        .toolbar { margin: 10px 0; }
+        .toolbar { margin: 10px 0 14px 0; }
     </style>
 </head>
 <body>
@@ -3231,15 +3231,11 @@ def run_feature_chk():
     <div id="status"></div>
 
     <div id="result" style="display:none;">
-        <div id="summary"></div>
-
         <div class="toolbar">
+            <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
+            <span class="status" id="copyStatus"></span>
             <button class="danger" id="clearCacheBtn">🗑️ 清除缓存</button>
         </div>
-
-        <h3>📋 检查单（一键复制保留 Times New Roman 16pt 格式）</h3>
-        <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
-        <span class="status" id="copyStatus"></span>
 
         <h3>📦 PRELIM / PACKAGE</h3>
         <div id="prelimPackage"></div>
@@ -3260,7 +3256,6 @@ def run_feature_chk():
         CHK_PREFERRED.forEach((ac, i) => chkPriority[ac] = i);
         const chkDefaultPri = CHK_PREFERRED.length;
 
-        // localStorage 存储 key
         const CHK_CACHE_KEY = 'chk_last_result_v1';
 
         let currentChkRows = [];
@@ -3279,11 +3274,11 @@ def run_feature_chk():
                     filename: fileName,
                     chkRows: currentChkRows,
                     chkFlights: currentChkFlights,
-                    chkRawItems: currentChkRawItems,
-                    count: currentChkRawItems.length
+                    chkRawItems: currentChkRawItems
                 };
                 localStorage.setItem(CHK_CACHE_KEY, JSON.stringify(payload));
-            } catch (e) { console.error('保存缓存失败：', e); }
+                return timestamp;
+            } catch (e) { console.error('保存缓存失败：', e); return null; }
         }
         function loadCache() {
             try {
@@ -3517,10 +3512,11 @@ def run_feature_chk():
             currentChkRawItems = chkRawItems;
 
             renderAll();
-            saveCache(fileName);
+            const ts = saveCache(fileName);
 
             const status = document.getElementById('status');
-            status.innerHTML = '<div class="success">✅ 文件读取成功：' + escapeHtml(fileName) + '（已自动缓存）</div>';
+            status.innerHTML = '<div class="success">✅ 文件读取成功：' + escapeHtml(fileName) +
+                '（' + escapeHtml(ts || '') + '，已自动缓存）</div>';
         }
 
         // ============ 渲染 ============
@@ -3528,8 +3524,6 @@ def run_feature_chk():
 
         function renderAll() {
             document.getElementById('result').style.display = 'block';
-            document.getElementById('summary').innerHTML =
-                '<div class="success">✅ 成功解析 ' + currentChkRawItems.length + ' 条检查单记录，' + currentChkFlights.length + ' 条 PRELIM/PACKAGE 航段</div>';
             renderPrelimPackage(currentChkFlights);
             generateJsScript(currentChkFlights);
             document.getElementById('copyBtn').onclick = copyChecklist;
@@ -3558,7 +3552,7 @@ def run_feature_chk():
                         'text/plain': new Blob([plain], { type: 'text/plain' })
                     })
                 ]);
-                status.textContent = '✅ 已复制（可直接粘贴到 Word，保留 Times New Roman 16pt 格式）';
+                status.textContent = '✅ 已复制（可粘贴到 Word，保留 Times New Roman 16pt）';
                 status.style.color = '#2e7d32';
             } catch (e) {
                 try {
