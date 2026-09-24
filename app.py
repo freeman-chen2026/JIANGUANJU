@@ -2424,30 +2424,30 @@ def run_feature_f():
     <title>世界时行程转换</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:15px; }
-        input[type=file] { padding: 6px; }
-        button { padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
+        input[type=file] { padding: 6px; font-size: 15px; }
+        button { padding: 9px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
         button:hover { background:#f5f5f5; }
-        .reg-block { margin-bottom: 18px; }
-        .reg-title { font-weight: bold; font-size: 16px; margin-bottom: 6px; }
-        .new-flag { color:#d32f2f; font-size: 0.9rem; margin-left:8px; font-weight: normal; }
+        .reg-block { margin-bottom: 20px; }
+        .reg-title { font-weight: bold; font-size: 19px; margin-bottom: 8px; }
+        .new-flag { color:#d32f2f; font-size: 1rem; margin-left:8px; font-weight: normal; }
         .seg-list {
             background:#f7f7f7; border: 1px solid #ddd; border-radius: 6px;
-            padding: 8px 12px; font-family: Consolas, "Courier New", monospace;
-            font-size: 14px; line-height: 1.8; color:#222;
+            padding: 10px 14px; font-family: Consolas, "Courier New", monospace;
+            font-size: 16px; line-height: 1.9; color:#222;
         }
-        .seg-line { padding: 2px 0; }
-        .status { color:#555; font-size: 14px; margin-left: 8px; }
+        .seg-line { padding: 3px 0; }
+        .status { color:#555; font-size: 15px; margin-left: 8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
         .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
         .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
         details { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
-        summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+        summary { cursor: pointer; font-weight: bold; padding: 4px 0; font-size: 16px; }
         ol { margin: 6px 0 6px 20px; padding: 0; }
-        li { margin: 2px 0; }
+        li { margin: 2px 0; font-size: 15px; }
         .full-text-box {
             background:#f5f5f5; padding:10px; border-radius:4px;
-            font-family: Consolas, "Courier New", monospace; font-size: 14px;
+            font-family: Consolas, "Courier New", monospace; font-size: 16px;
             white-space: pre; overflow-x: auto; border:1px solid #e0e0e0;
             max-height: 400px; overflow-y: auto;
         }
