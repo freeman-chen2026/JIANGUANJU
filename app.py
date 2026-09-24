@@ -2413,217 +2413,460 @@ def run_feature_e():
 
 
 # ==============================
-# 功能 F：世界时行程
+# 功能 F：世界时行程（HTML/JS 沙箱版 + localStorage 持久化）
 # ==============================
 def run_feature_f():
-    st.markdown("从Jetops系统导出的北京时间的行程 Excel 文件转换为世界时的行程，便于复制粘贴。")
-    st.info("💡 每次上传将自动与上一次记录对比，新增或变更的航段会在下方红色高亮显示。")
+    F_HTML = r"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>世界时行程转换</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 10px; color:#333; font-size:14px; }
+        h2 { margin: 6px 0 10px 0; font-size: 20px; }
+        h3 { margin: 14px 0 8px 0; font-size: 16px; }
+        input[type=file] { padding: 6px; }
+        button { padding: 8px 14px; font-size: 13px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
+        button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
+        button.primary:hover { background:#e63939; }
+        button:hover { background:#f5f5f5; }
+        .code-block { background:#f5f5f5; padding:10px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:12.5px; white-space: pre-wrap; word-break: break-all; border:1px solid #e0e0e0; margin: 4px 0 8px 0; }
+        .reg-block { margin-top: 12px; }
+        .reg-title { font-weight: bold; margin-bottom: 4px; }
+        .status { color:#555; font-size: 13px; margin-left: 8px; }
+        .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
+        .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
+        .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
+        .new-flag { color:#d32f2f; font-size: 0.9rem; margin-left:6px; }
+        details { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
+        summary { cursor: pointer; font-weight: bold; padding: 4px 0; }
+        ol { margin: 6px 0 6px 20px; padding: 0; }
+        li { margin: 2px 0; }
+    </style>
+</head>
+<body>
+    <h2>🌐 世界时行程</h2>
+    <p>从 Jetops 系统导出的北京时间行程 Excel 转换为世界时（UTC），便于复制粘贴。</p>
+    <p>💡 上传结果和历史记录会自动保存在浏览器，关闭后再打开仍保留。</p>
 
-    HISTORY_FILE = "flight_history.json"
+    <input type="file" id="fileInput" accept=".xlsx,.xls">
+    <div id="status"></div>
 
-    def load_history():
-        if os.path.exists(HISTORY_FILE):
-            try:
-                with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except:
-                return {"records": []}
-        else:
-            return {"records": []}
+    <div id="result" style="display:none;">
+        <h3>📋 生成的飞行计划（红色为新增/变更）</h3>
+        <div id="plans"></div>
 
-    def save_history(history):
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
+        <details>
+            <summary>📦 全部计划合并（点击展开）</summary>
+            <button id="copyAllBtn">📋 复制全部</button>
+            <span class="status" id="copyAllStatus"></span>
+            <div class="code-block" id="fullText"></div>
+        </details>
 
-    def parse_time_column(val):
-        if pd.isna(val):
-            return None
-        if isinstance(val, (pd.Timestamp, datetime)):
-            return val.strftime('%H:%M')
-        if hasattr(val, 'strftime'):
-            return val.strftime('%H:%M')
-        s = str(val).strip()
-        if ':' in s:
-            return s[:5]
-        return s
+        <details>
+            <summary>📜 历史记录</summary>
+            <div id="historyList"></div>
+            <button id="clearHistoryBtn">🗑️ 清除所有历史</button>
+        </details>
+    </div>
 
-    def convert_to_utc(date_val, time_str):
-        if pd.isna(date_val) or time_str is None:
-            return None
-        if isinstance(date_val, (pd.Timestamp, datetime)):
-            date_str = date_val.strftime('%Y-%m-%d')
-        else:
-            date_str = str(date_val).split()[0]
-        dt_str = f"{date_str} {time_str}"
-        try:
-            dt_local = pd.to_datetime(dt_str)
-            dt_utc = dt_local - timedelta(hours=8)
-            return dt_utc
-        except:
-            return None
+    <script>
+        // ======================= 常量 =======================
+        const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const PRIORITY = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R'];
+        const HISTORY_KEY = 'worldtime_history_v1';
+        const LAST_PLANS_KEY = 'worldtime_last_plans_v1';
+        const LAST_FILE_KEY = 'worldtime_last_file_v1';
 
-    def format_utc(dt):
-        if dt is None:
-            return ""
-        months = ['JAN','FEB','MAR','APR','MAY','JUN',
-                  'JUL','AUG','SEP','OCT','NOV','DEC']
-        day = dt.day
-        month = months[dt.month - 1]
-        hour = dt.hour
-        minute = dt.minute
-        return f"{day:02d}{month} {hour:02d}{minute:02d}Z"
+        // ======================= localStorage 封装 =======================
+        function loadHistory() {
+            try {
+                const raw = localStorage.getItem(HISTORY_KEY);
+                if (!raw) return {records: []};
+                const obj = JSON.parse(raw);
+                if (!obj.records) obj.records = [];
+                return obj;
+            } catch (e) { return {records: []}; }
+        }
+        function saveHistory(h) {
+            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch (e) {}
+        }
+        function loadJSON(key) {
+            try {
+                const raw = localStorage.getItem(key);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+        function saveJSON(key, val) {
+            try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
+        }
 
-    def generate_plans(df):
-        required = ['飞机注册号', '出发地', '到达地', '出发日期', '计划出发', '到达日期', '预计到达', '用途']
-        for col in required:
-            if col not in df.columns:
-                st.error(f"❌ 缺少列：{col}")
-                return None
+        // ======================= 基础工具 =======================
+        function pad2(n) { return String(n).padStart(2, '0'); }
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-        df = df.dropna(subset=['出发地', '到达地', '出发日期', '计划出发'])
-        if df.empty:
-            st.warning("没有有效的航段数据")
-            return None
-
-        plans = {}
-        for idx, row in df.iterrows():
-            reg = row['飞机注册号']
-            if pd.isna(reg) or str(reg).strip() == '':
-                reg = "N/A"
-            else:
-                reg = str(reg).strip()
-
-            dep_time = parse_time_column(row['计划出发'])
-            arr_time = parse_time_column(row['预计到达'])
-            if dep_time is None or arr_time is None:
-                continue
-
-            dep_utc = convert_to_utc(row['出发日期'], dep_time)
-            arr_utc = convert_to_utc(row['到达日期'], arr_time)
-            if dep_utc is None or arr_utc is None:
-                continue
-
-            use = str(row['用途']) if not pd.isna(row['用途']) else ''
-            flight_type = 'FERRY' if '调机' in use else 'PAX'
-
-            line = (f"ETD {row['出发地']} {format_utc(dep_utc)} // "
-                    f"ETA {row['到达地']} {format_utc(arr_utc)}  {flight_type}")
-
-            if reg not in plans:
-                plans[reg] = []
-            plans[reg].append((dep_utc, line))
-
-        result = {}
-        for reg, items in plans.items():
-            items.sort(key=lambda x: x[0])
-            lines = [reg]
-            lines.extend([item[1] for item in items])
-            result[reg] = "\n".join(lines)
-
-        return result
-
-    def sort_plans(plans_dict):
-        priority_order = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R']
-        all_keys = list(plans_dict.keys())
-        priority_keys = [k for k in priority_order if k in all_keys]
-        remaining_keys = [k for k in all_keys if k not in priority_order and k != "N/A"]
-        remaining_keys.sort()
-        na_keys = [k for k in all_keys if k == "N/A"]
-        sorted_keys = priority_keys + remaining_keys + na_keys
-        return {k: plans_dict[k] for k in sorted_keys}
-
-    def diff_plans(old_plans, new_plans):
-        changes = {}
-        all_regs = set(old_plans.keys()) | set(new_plans.keys())
-        for reg in all_regs:
-            old_lines = set(old_plans.get(reg, "").split('\n')) if old_plans.get(reg) else set()
-            new_lines = set(new_plans.get(reg, "").split('\n')) if new_plans.get(reg) else set()
-            old_lines.discard(reg)
-            new_lines.discard(reg)
-            added = new_lines - old_lines
-            for line in added:
-                changes[(reg, line)] = 'added'
-        return changes
-
-    uploaded_file_2 = sess_file_uploader("📤 上传航段数据导出（北京时间）", type=["xlsx"], key="f_worldtime")
-
-    if uploaded_file_2 is not None:
-        try:
-            df = pd.read_excel(uploaded_file_2, skiprows=1)
-            st.success("✅ 文件读取成功")
-
-            new_plans = generate_plans(df)
-            if new_plans is None:
-                st.stop()
-
-            sorted_new_plans = sort_plans(new_plans)
-
-            history = load_history()
-            old_plans = {}
-            if history["records"]:
-                last_record = history["records"][-1]
-                old_plans = last_record.get("data", {})
-
-            changes = diff_plans(old_plans, new_plans)
-
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            filename = uploaded_file_2.name
-            new_record = {
-                "timestamp": timestamp,
-                "filename": filename,
-                "data": new_plans
+        function parseDate(v) {
+            if (v == null || v === '') return null;
+            if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
+            if (typeof v === 'number') {
+                // Excel 日期序列号 → UTC 天数 → 取年月日
+                const ms = Math.round((v - 25569) * 86400 * 1000);
+                const d = new Date(ms);
+                return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
             }
-            history["records"].append(new_record)
-            if len(history["records"]) > 20:
-                history["records"] = history["records"][-20:]
-            save_history(history)
+            const s = String(v).trim();
+            if (!s) return null;
+            const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+            if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
+            const d = new Date(s);
+            if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            return null;
+        }
 
-            st.subheader("📋 生成的飞行计划（红色为新增/变更）")
+        function parseTime(v) {
+            if (v == null || v === '') return null;
+            if (v instanceof Date) return pad2(v.getHours()) + ':' + pad2(v.getMinutes());
+            if (typeof v === 'number') {
+                let frac = v;
+                if (v > 1) frac = v - Math.floor(v);
+                const totalMin = Math.round(frac * 24 * 60);
+                return pad2(Math.floor(totalMin / 60) % 24) + ':' + pad2(totalMin % 60);
+            }
+            const s = String(v).trim();
+            const m = s.match(/(\d{1,2}):(\d{2})/);
+            if (m) return pad2(parseInt(m[1])) + ':' + m[2];
+            return null;
+        }
 
-            for reg, text in sorted_new_plans.items():
-                lines = text.split('\n')
-                has_changes = any((reg, line) in changes for line in lines if line != reg)
+        // 把「日期 + HH:MM」当作北京时间标签，减去 8 小时得到 UTC 标签
+        // 返回 {day, month, hours, minutes, sortKey}
+        function toUTCLabel(dateVal, timeStr) {
+            const d = parseDate(dateVal);
+            if (!d || !timeStr) return null;
+            const parts = timeStr.split(':');
+            const h = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
 
-                if has_changes:
-                    st.markdown(f"**✈️ {reg}** 🔴 <span style='color:red;font-size:0.9rem;'>（有新增或变更）</span>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"**✈️ {reg}**")
+            let total = h * 60 + m - 8 * 60;
+            let dayOff = 0;
+            while (total < 0) { total += 24 * 60; dayOff--; }
+            while (total >= 24 * 60) { total -= 24 * 60; dayOff++; }
+            const uh = Math.floor(total / 60);
+            const um = total % 60;
 
-                plain_lines = []
-                for line in lines:
-                    if line == reg:
-                        continue
-                    plain_lines.append(line)
+            const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            dd.setDate(dd.getDate() + dayOff);
 
-                plain_text = "\n".join(plain_lines)
-                st.code(plain_text, language="text")
+            return {
+                day: dd.getDate(),
+                month: dd.getMonth() + 1,
+                hours: uh,
+                minutes: um,
+                sortKey: dd.getFullYear() * 100000000
+                       + (dd.getMonth() + 1) * 1000000
+                       + dd.getDate() * 10000
+                       + uh * 100 + um
+            };
+        }
 
-            full_text = ""
-            for reg, text in sorted_new_plans.items():
-                full_text += f"{text}\n\n"
-            with st.expander("📦 全部计划合并（点击展开）"):
-                st.code(full_text, language="text")
+        function formatLabel(u) {
+            if (!u) return '';
+            return pad2(u.day) + MONTHS[u.month - 1] + ' ' + pad2(u.hours) + pad2(u.minutes) + 'Z';
+        }
 
-            with st.expander("📜 查看历史上传记录"):
-                if history["records"]:
-                    for i, rec in enumerate(history["records"]):
-                        st.write(f"{i+1}. {rec['timestamp']} - {rec['filename']}")
-                else:
-                    st.write("暂无历史记录")
+        // ======================= 核心处理 =======================
+        function processRows(rows) {
+            // 找表头
+            let headerIdx = -1;
+            for (let i = 0; i < Math.min(rows.length, 10); i++) {
+                const vals = rows[i].map(v => String(v).trim());
+                if (vals.includes('飞机注册号') && vals.includes('出发地') && vals.includes('到达地') && vals.includes('计划出发')) {
+                    headerIdx = i;
+                    break;
+                }
+            }
+            if (headerIdx === -1) {
+                return {error: '未找到表头行（需包含：飞机注册号、出发地、到达地、计划出发）'};
+            }
 
-            if st.button("🗑️ 清除所有历史记录", key="clear_history_f"):
-                save_history({"records": []})
-                st.success("历史已清除，请刷新页面")
-                st.rerun()
+            const headers = rows[headerIdx].map(h => String(h).trim());
+            function findCol(cands) {
+                for (const c of cands) {
+                    const idx = headers.indexOf(c);
+                    if (idx !== -1) return idx;
+                }
+                for (const c of cands) {
+                    for (let i = 0; i < headers.length; i++) {
+                        if (headers[i].includes(c)) return i;
+                    }
+                }
+                return -1;
+            }
 
-        except Exception as e:
-            st.error(f"❌ 处理出错：{e}")
-            st.stop()
-    else:
-        st.info("请上传一个符合格式的 Excel 文件。")
+            const colReg      = findCol(['飞机注册号', '注册号', '机号']);
+            const colDep      = findCol(['出发地']);
+            const colArr      = findCol(['到达地']);
+            const colDepDate  = findCol(['出发日期']);
+            const colDepTime  = findCol(['计划出发']);
+            const colArrDate  = findCol(['到达日期']);
+            const colArrTime  = findCol(['预计到达']);
+            const colPurpose  = findCol(['用途']);
 
-    st.markdown("---")
-    st.caption("🛠️ 工具说明：日期/时间按北京时间（UTC+8）自动转换为世界时（Z）。对比功能基于上一次上传的记录。")
+            const required = {
+                '飞机注册号': colReg, '出发地': colDep, '到达地': colArr,
+                '出发日期': colDepDate, '计划出发': colDepTime,
+                '到达日期': colArrDate, '预计到达': colArrTime, '用途': colPurpose
+            };
+            for (const name in required) {
+                if (required[name] === -1) return {error: '缺少列：' + name};
+            }
+
+            const plans = {};
+
+            for (let i = headerIdx + 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r.length === 0) continue;
+                const get = idx => (idx >= 0 && idx < r.length) ? r[idx] : '';
+
+                const dep       = get(colDep);
+                const arr       = get(colArr);
+                const depDate   = get(colDepDate);
+                const depTimeRaw = get(colDepTime);
+                const arrDate   = get(colArrDate);
+                const arrTimeRaw = get(colArrTime);
+
+                if (dep === '' || arr === '' || depDate === '' || depTimeRaw === '') continue;
+
+                const depTimeStr = parseTime(depTimeRaw);
+                const arrTimeStr = parseTime(arrTimeRaw);
+                if (!depTimeStr || !arrTimeStr) continue;
+
+                const depUtc = toUTCLabel(depDate, depTimeStr);
+                const arrUtc = toUTCLabel(arrDate, arrTimeStr);
+                if (!depUtc || !arrUtc) continue;
+
+                let reg = get(colReg);
+                if (reg === '' || reg == null) reg = 'N/A';
+                else reg = String(reg).trim();
+
+                const use = String(get(colPurpose) || '');
+                const flightType = use.indexOf('调机') !== -1 ? 'FERRY' : 'PAX';
+
+                const line = 'ETD ' + String(dep).trim() + ' ' + formatLabel(depUtc) +
+                             ' // ETA ' + String(arr).trim() + ' ' + formatLabel(arrUtc) +
+                             '  ' + flightType;
+
+                if (!plans[reg]) plans[reg] = [];
+                plans[reg].push({sortKey: depUtc.sortKey, line: line});
+            }
+
+            const result = {};
+            for (const reg in plans) {
+                plans[reg].sort((a, b) => a.sortKey - b.sortKey);
+                const lines = [reg];
+                plans[reg].forEach(it => lines.push(it.line));
+                result[reg] = lines.join('\n');
+            }
+            return {plans: result};
+        }
+
+        function sortPlans(plans) {
+            const keys = Object.keys(plans);
+            const priorityKeys = PRIORITY.filter(k => keys.indexOf(k) !== -1);
+            const remainingKeys = keys.filter(k => PRIORITY.indexOf(k) === -1 && k !== 'N/A').sort();
+            const naKeys = keys.filter(k => k === 'N/A');
+            const sorted = priorityKeys.concat(remainingKeys, naKeys);
+            const result = {};
+            sorted.forEach(k => result[k] = plans[k]);
+            return result;
+        }
+
+        function diffPlans(oldPlans, newPlans) {
+            const changes = {};
+            const allRegs = new Set(Object.keys(oldPlans || {}).concat(Object.keys(newPlans || {})));
+            allRegs.forEach(reg => {
+                const oldLines = new Set(((oldPlans && oldPlans[reg]) || '').split('\n'));
+                const newLines = new Set(((newPlans && newPlans[reg]) || '').split('\n'));
+                oldLines.delete(reg);
+                newLines.delete(reg);
+                newLines.forEach(line => {
+                    if (!oldLines.has(line)) {
+                        changes[reg + '\u0001' + line] = 'added';
+                    }
+                });
+            });
+            return changes;
+        }
+
+        // ======================= 渲染 =======================
+        function renderPlans(plans, changes, isRestored) {
+            const container = document.getElementById('plans');
+            container.innerHTML = '';
+            let fullText = '';
+
+            for (const reg in plans) {
+                const text = plans[reg];
+                const lines = text.split('\n');
+                const hasChanges = !isRestored && lines.some(line => line !== reg && changes[reg + '\u0001' + line]);
+
+                const titleDiv = document.createElement('div');
+                titleDiv.className = 'reg-title';
+                titleDiv.innerHTML = '✈️ ' + escapeHtml(reg) +
+                    (hasChanges ? '<span class="new-flag">🔴 有新增或变更</span>' : '');
+                container.appendChild(titleDiv);
+
+                const code = document.createElement('div');
+                code.className = 'code-block';
+                const plainLines = lines.filter(l => l !== reg);
+                code.textContent = plainLines.join('\n');
+                container.appendChild(code);
+
+                fullText += text + '\n\n';
+            }
+
+            document.getElementById('fullText').textContent = fullText;
+        }
+
+        function renderHistory(history) {
+            const container = document.getElementById('historyList');
+            if (!history.records || history.records.length === 0) {
+                container.innerHTML = '<div class="info">暂无历史记录</div>';
+                return;
+            }
+            let html = '<ol>';
+            for (const rec of history.records) {
+                html += '<li>' + escapeHtml(rec.timestamp) + ' - ' + escapeHtml(rec.filename) + '</li>';
+            }
+            html += '</ol>';
+            container.innerHTML = html;
+        }
+
+        // ======================= 主流程 =======================
+        function handleFile(file) {
+            const status = document.getElementById('status');
+            status.innerHTML = '<div class="info">⏳ 正在读取文件...</div>';
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = new Uint8Array(ev.target.result);
+                    const wb = XLSX.read(data, { type: 'array', cellDates: true });
+                    const ws = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+
+                    const result = processRows(rows);
+                    if (result.error) {
+                        status.innerHTML = '<div class="error">❌ ' + escapeHtml(result.error) + '</div>';
+                        return;
+                    }
+
+                    const newPlans = result.plans;
+                    const sortedNewPlans = sortPlans(newPlans);
+
+                    const history = loadHistory();
+                    let oldPlans = {};
+                    if (history.records.length > 0) {
+                        oldPlans = history.records[history.records.length - 1].data || {};
+                    }
+
+                    const changes = diffPlans(oldPlans, newPlans);
+
+                    const now = new Date();
+                    const timestamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
+                                      ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+
+                    history.records.push({
+                        timestamp: timestamp,
+                        filename: file.name,
+                        data: newPlans
+                    });
+                    if (history.records.length > 20) {
+                        history.records = history.records.slice(-20);
+                    }
+                    saveHistory(history);
+
+                    // 关键：把「上次结果」也写 localStorage，用于"不过期"
+                    saveJSON(LAST_PLANS_KEY, sortedNewPlans);
+                    saveJSON(LAST_FILE_KEY, {name: file.name, timestamp: timestamp});
+
+                    document.getElementById('result').style.display = 'block';
+                    status.innerHTML = '<div class="success">✅ 文件读取成功：' +
+                        escapeHtml(file.name) + '（历史累计 ' + history.records.length + ' 条）</div>';
+                    renderPlans(sortedNewPlans, changes, false);
+                    renderHistory(history);
+                } catch (err) {
+                    status.innerHTML = '<div class="error">❌ 处理失败：' + escapeHtml(err.message) + '</div>';
+                    console.error(err);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 页面加载：自动恢复上次结果
+        window.addEventListener('DOMContentLoaded', () => {
+            const lastPlans = loadJSON(LAST_PLANS_KEY);
+            const lastFile = loadJSON(LAST_FILE_KEY);
+            const history = loadHistory();
+
+            if (lastPlans && Object.keys(lastPlans).length > 0) {
+                document.getElementById('result').style.display = 'block';
+                const status = document.getElementById('status');
+                const info = lastFile
+                    ? '（上次加载：' + escapeHtml(lastFile.name) + '，' + escapeHtml(lastFile.timestamp) + '）'
+                    : '';
+                status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
+                renderPlans(lastPlans, {}, true);
+                renderHistory(history);
+            }
+        });
+
+        document.getElementById('fileInput').addEventListener('change', (e) => {
+            const f = e.target.files[0];
+            if (f) handleFile(f);
+        });
+
+        document.getElementById('clearHistoryBtn').addEventListener('click', () => {
+            if (!confirm('确定清除所有历史记录吗？')) return;
+            saveHistory({records: []});
+            try {
+                localStorage.removeItem(LAST_PLANS_KEY);
+                localStorage.removeItem(LAST_FILE_KEY);
+            } catch (e) {}
+            location.reload();
+        });
+
+        document.getElementById('copyAllBtn').addEventListener('click', async () => {
+            const status = document.getElementById('copyAllStatus');
+            const text = document.getElementById('fullText').textContent;
+            try {
+                await navigator.clipboard.writeText(text);
+                status.textContent = '✅ 已复制';
+                status.style.color = '#2e7d32';
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                    status.textContent = '✅ 已复制（降级模式）';
+                    status.style.color = '#2e7d32';
+                } catch (e2) {
+                    status.textContent = '❌ 复制失败：' + e.message;
+                    status.style.color = '#d32f2f';
+                }
+                document.body.removeChild(ta);
+            }
+        });
+    </script>
+</body>
+</html>
+"""
+    components.html(F_HTML, height=1300, scrolling=True)
 
 
 # ==============================
