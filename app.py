@@ -2878,318 +2878,406 @@ def run_feature_f():
 
 
 # ==============================
-# 功能 G：航路处理工具
+# 功能 G：航路处理工具（HTML/JS 沙箱版）
 # ==============================
 def run_feature_g():
-    st.markdown("支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀，兼容不规整数据")
+    G_HTML = r"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>航路处理工具</title>
+    <style>
+        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
+        textarea {
+            width: 100%; height: 300px; box-sizing: border-box;
+            font-family: Consolas, "Courier New", monospace; font-size: 15px;
+            padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+            line-height: 1.6;
+        }
+        button {
+            padding: 10px 20px; font-size: 16px; border-radius: 6px;
+            border: 1px solid #ddd; background: #fff; cursor: pointer; margin-right: 8px;
+        }
+        button.primary { background: #ff4b4b; color: #fff; border-color: #ff4b4b; font-weight: bold; }
+        button.primary:hover { background: #e63939; }
+        button:hover { background: #f5f5f5; }
+        button.primary:hover { background: #e63939; }
+        .toolbar { margin: 12px 0; }
+        .result-box {
+            background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px;
+            padding: 14px; font-family: Consolas, "Courier New", monospace;
+            font-size: 16px; line-height: 1.7; white-space: pre-wrap; word-break: break-all;
+            max-height: 500px; overflow-y: auto;
+        }
+        .success { color: #2e7d32; background: #e8f5e9; padding: 8px; border-radius: 4px; margin: 8px 0; font-size: 15px; }
+        .error { color: #d32f2f; background: #ffebee; padding: 8px; border-radius: 4px; margin: 8px 0; font-size: 15px; }
+        .info { color: #1976d2; background: #e3f2fd; padding: 8px; border-radius: 4px; margin: 8px 0; font-size: 15px; }
+        .label { color: #555; font-size: 15px; margin: 6px 0; }
+    </style>
+</head>
+<body>
+    <div class="label">📋 请输入待处理的航路文本</div>
+    <textarea id="inputText" placeholder="粘贴民航航线数据，支持多行表格格式/纯中文描述格式..."></textarea>
 
-    def parse_coord(coord_str):
-        letter = coord_str[0]
-        num_part = coord_str[1:]
-        if letter == 'N':
-            deg = int(num_part[0:2])
-            minute = int(num_part[2:4])
-            sec_part = num_part[4:]
-            if '.' in sec_part:
-                sec_float = float(sec_part)
-                sec_int = int(round(sec_float))
-            else:
-                sec_int = int(sec_part)
-            if sec_int >= 60:
-                sec_int -= 60
-                minute += 1
-                if minute >= 60:
-                    minute -= 60
-                    deg += 1
-            return f"{deg:02d}{minute:02d}{sec_int:02d}"
-        elif letter == 'E':
-            deg = int(num_part[0:3])
-            minute = int(num_part[3:5])
-            sec_part = num_part[5:]
-            if '.' in sec_part:
-                sec_float = float(sec_part)
-                sec_int = int(round(sec_float))
-            else:
-                sec_int = int(sec_part)
-            if sec_int >= 60:
-                sec_int -= 60
-                minute += 1
-                if minute >= 60:
-                    minute -= 60
-                    deg += 1
-            return f"{deg:03d}{minute:02d}{sec_int:02d}"
-        else:
-            raise ValueError(f"未知的坐标前缀: {letter}")
+    <div class="toolbar">
+        <button class="primary" id="processBtn">⚙️ 处理</button>
+        <button id="clearBtn">🗑️ 清空</button>
+        <button id="copyBtn">📋 复制结果</button>
+        <span id="copyStatus" style="margin-left:8px; color:#2e7d32; font-size:15px;"></span>
+    </div>
 
-    def base_name(s):
-        return s.split('@')[0]
+    <div id="status"></div>
 
-    def is_open_point(s):
-        base = base_name(s)
-        if re.match(r'^[A-Z]{2,5}$', base):
-            return True
-        if re.match(r'^P[A-Z]+$', base):
-            return True
-        return False
+    <div id="resultSection" style="display:none;">
+        <div class="label">📊 处理结果</div>
+        <div class="result-box" id="resultBox"></div>
+    </div>
 
-    def is_p_point(s):
-        base = base_name(s)
-        return re.match(r'^P\d+$', base) is not None
+    <script>
+        const INPUT_CACHE_KEY = 'route_input_cache_v1';
 
-    def clean_route(r):
-        if r.startswith('#'):
-            return r[1:]
-        return r
+        // ===== localStorage =====
+        function saveInput(text) {
+            try { localStorage.setItem(INPUT_CACHE_KEY, text); } catch(e) {}
+        }
+        function loadInput() {
+            try { return localStorage.getItem(INPUT_CACHE_KEY) || ''; } catch(e) { return ''; }
+        }
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
 
-    def is_open_route(rt):
-        return rt and rt[0] not in ('H', 'J', 'V')
+        // ===== 基础工具（对应 Python 同名函数） =====
+        function parseCoord(coordStr) {
+            const letter = coordStr[0];
+            const numPart = coordStr.slice(1);
+            if (letter === 'N') {
+                let deg = parseInt(numPart.slice(0, 2));
+                let minute = parseInt(numPart.slice(2, 4));
+                let secPart = numPart.slice(4);
+                let secInt;
+                if (secPart.indexOf('.') !== -1) {
+                    secInt = Math.round(parseFloat(secPart));
+                } else {
+                    secInt = parseInt(secPart);
+                }
+                if (secInt >= 60) {
+                    secInt -= 60;
+                    minute += 1;
+                    if (minute >= 60) { minute -= 60; deg += 1; }
+                }
+                return String(deg).padStart(2, '0') + String(minute).padStart(2, '0') + String(secInt).padStart(2, '0');
+            } else if (letter === 'E') {
+                let deg = parseInt(numPart.slice(0, 3));
+                let minute = parseInt(numPart.slice(3, 5));
+                let secPart = numPart.slice(5);
+                let secInt;
+                if (secPart.indexOf('.') !== -1) {
+                    secInt = Math.round(parseFloat(secPart));
+                } else {
+                    secInt = parseInt(secPart);
+                }
+                if (secInt >= 60) {
+                    secInt -= 60;
+                    minute += 1;
+                    if (minute >= 60) { minute -= 60; deg += 1; }
+                }
+                return String(deg).padStart(3, '0') + String(minute).padStart(2, '0') + String(secInt).padStart(2, '0');
+            }
+            throw new Error('未知的坐标前缀: ' + letter);
+        }
 
-    def extract_table(text):
-        tokens = text.strip().split()
-        start_idx = 0
-        for i, tok in enumerate(tokens):
-            if tok.isdigit() and 1 <= int(tok) <= 40:
-                start_idx = i
-                break
-        tokens = tokens[start_idx:]
+        function baseName(s) { return s.split('@')[0]; }
 
-        lines = []
-        i = 0
-        while i < len(tokens):
-            if tokens[i].isdigit():
-                line = [tokens[i]]
-                i += 1
-                while i < len(tokens) and not tokens[i].isdigit():
-                    line.append(tokens[i])
-                    i += 1
-                lines.append(line)
+        function isOpenPoint(s) {
+            const base = baseName(s);
+            if (/^[A-Z]{2,5}$/.test(base)) return true;
+            if (/^P[A-Z]+$/.test(base)) return true;
+            return false;
+        }
 
-        points = []
-        routes = []
-        for line in lines:
-            lat_idx = None
-            for idx, tok in enumerate(line):
-                if tok.startswith('N') and tok[1:].replace('.', '', 1).isdigit():
-                    lat_idx = idx
-                    break
-            if lat_idx is None:
-                continue
-            lon_idx = lat_idx + 1
-            if lon_idx >= len(line) or not line[lon_idx].startswith('E'):
-                continue
-            lat_str = line[lat_idx]
-            lon_str = line[lon_idx]
+        function isPPoint(s) {
+            const base = baseName(s);
+            return /^P\d+$/.test(base);
+        }
 
-            route = None
-            if lon_idx + 1 < len(line):
-                next_tok = line[lon_idx + 1]
-                if re.match(r'^[A-Z][A-Z0-9]*$', next_tok) and not next_tok[0].isdigit():
-                    route = next_tok
+        function cleanRoute(r) {
+            if (r.startsWith('#')) return r.slice(1);
+            return r;
+        }
 
-            point_name = None
-            for j in range(lat_idx - 1, 0, -1):
-                tok = line[j]
-                if is_open_point(tok) or is_p_point(tok):
-                    point_name = tok
-                    break
-            if point_name is None:
-                continue
+        function isOpenRoute(rt) {
+            return rt && (rt[0] !== 'H' && rt[0] !== 'J' && rt[0] !== 'V');
+        }
 
-            if is_p_point(point_name):
-                lat_int = parse_coord(lat_str)
-                lon_int = parse_coord(lon_str)
-                point_display = f"{point_name}@{lat_int}N{lon_int}E"
-            else:
-                point_display = point_name
+        function isClosedRoute(rt) {
+            return rt.startsWith('H') || rt.startsWith('J') || rt.startsWith('V');
+        }
 
-            points.append(point_display)
-            if route is not None:
-                routes.append(route)
+        // ===== 表格格式提取 =====
+        function extractTable(text) {
+            let tokens = text.trim().split(/\s+/);
+            let startIdx = 0;
+            for (let i = 0; i < tokens.length; i++) {
+                if (/^\d+$/.test(tokens[i]) && parseInt(tokens[i]) >= 1 && parseInt(tokens[i]) <= 40) {
+                    startIdx = i;
+                    break;
+                }
+            }
+            tokens = tokens.slice(startIdx);
 
-        seq = []
-        for i in range(len(points)):
-            seq.append(points[i])
-            if i < len(routes):
-                seq.append(routes[i])
-        return seq
+            const lines = [];
+            let i = 0;
+            while (i < tokens.length) {
+                if (/^\d+$/.test(tokens[i])) {
+                    const line = [tokens[i]];
+                    i++;
+                    while (i < tokens.length && !/^\d+$/.test(tokens[i])) {
+                        line.push(tokens[i]);
+                        i++;
+                    }
+                    lines.push(line);
+                } else {
+                    i++;
+                }
+            }
 
-    def extract_chinese(text):
-        text = re.sub(r'[\u4e00-\u9fa5，、。；：""''（）【】]', ' ', text)
-        words = text.split()
-        seq = []
-        for w in words:
-            if '(' in w and ')' in w:
-                m = re.search(r'\(([A-Z]+)\)', w)
-                if m:
-                    point = m.group(1)
-                    prefix = w[:w.find('(')]
-                    m_route = re.search(r'([A-Z]\d+)$', prefix)
-                    if m_route:
-                        seq.append(m_route.group(1))
-                    seq.append(point)
-            elif re.match(r'^[A-Z]\d+[A-Z]{2,5}$', w) or re.match(r'^[A-Z]\d+P\d+$', w):
-                m = re.match(r'^([A-Z]\d+)([A-Z]{2,5}|P\d+)$', w)
-                if m:
-                    seq.append(m.group(1))
-                    seq.append(m.group(2))
-            elif re.match(r'^[A-Z]\d+$', w):
-                seq.append(w)
-            elif is_open_point(w) or is_p_point(w):
-                seq.append(w)
-        return seq
+            const points = [];
+            const routes = [];
+            for (const line of lines) {
+                let latIdx = -1;
+                for (let idx = 0; idx < line.length; idx++) {
+                    const tok = line[idx];
+                    if (tok.startsWith('N') && /^\d+(\.\d+)?$/.test(tok.slice(1))) {
+                        latIdx = idx;
+                        break;
+                    }
+                }
+                if (latIdx === -1) continue;
+                const lonIdx = latIdx + 1;
+                if (lonIdx >= line.length || !line[lonIdx].startsWith('E')) continue;
+                const latStr = line[latIdx];
+                const lonStr = line[lonIdx];
 
-    def step1_extract(text):
-        if re.search(r'N\d{5,6}(?:\.\d+)?\s+E\d{6,7}(?:\.\d+)?', text):
-            return extract_table(text), 'table'
-        else:
-            return extract_chinese(text), 'chinese'
+                let route = null;
+                if (lonIdx + 1 < line.length) {
+                    const nextTok = line[lonIdx + 1];
+                    if (/^[A-Z][A-Z0-9]*$/.test(nextTok) && !/^\d/.test(nextTok[0])) {
+                        route = nextTok;
+                    }
+                }
 
-    def step2_reduce(seq):
-        L = seq[:]
-        changed = True
-        while changed:
-            changed = False
-            n = len(L)
-            candidates = []
-            for i in range(0, n, 2):
-                if not is_open_point(L[i]):
-                    continue
-                if i + 1 >= n:
-                    continue
-                first_route = clean_route(L[i+1])
-                if not is_open_route(first_route):
-                    continue
-                for j in range(i+2, n, 2):
-                    all_same = True
-                    for k in range(i+1, j, 2):
-                        rt = clean_route(L[k])
-                        if rt != first_route or not is_open_route(rt):
-                            all_same = False
-                            break
-                    if not all_same:
-                        break
-                    if is_open_point(L[j]):
-                        length = (j - i) // 2
-                        if length >= 2:
-                            candidates.append((i, j, length))
-            if not candidates:
-                break
-            candidates.sort(key=lambda x: -x[2])
-            best_i, best_j, _ = candidates[0]
-            new_segment = [L[best_i], L[best_i+1], L[best_j]]
-            L = L[:best_i] + new_segment + L[best_j+1:]
-            changed = True
-        return L
+                let pointName = null;
+                for (let j = latIdx - 1; j > 0; j--) {
+                    const tok = line[j];
+                    if (isOpenPoint(tok) || isPPoint(tok)) {
+                        pointName = tok;
+                        break;
+                    }
+                }
+                if (pointName === null) continue;
 
-    def step3_add_hash(seq):
-        pts = seq[0::2]
-        rts = seq[1::2]
-        m = len(rts)
+                let pointDisplay;
+                if (isPPoint(pointName)) {
+                    const latInt = parseCoord(latStr);
+                    const lonInt = parseCoord(lonStr);
+                    pointDisplay = pointName + '@' + latInt + 'N' + lonInt + 'E';
+                } else {
+                    pointDisplay = pointName;
+                }
 
-        def is_closed_route(rt):
-            return rt.startswith(('H', 'J', 'V'))
+                points.push(pointDisplay);
+                if (route !== null) routes.push(route);
+            }
 
-        def is_p(pt):
-            base = base_name(pt)
-            return re.match(r'^P\d+$', base) is not None
+            const seq = [];
+            for (let i = 0; i < points.length; i++) {
+                seq.push(points[i]);
+                if (i < routes.length) seq.push(routes[i]);
+            }
+            return seq;
+        }
 
-        res = [pts[0]]
-        for i, rt in enumerate(rts):
-            left = pts[i]
-            right = pts[i+1]
-            need_hash = False
-            if is_closed_route(rt):
-                need_hash = True
-            elif is_p(left) or is_p(right):
-                need_hash = True
-            res.append('#' + rt if need_hash else rt)
-            res.append(right)
-        return res
+        // ===== 中文描述格式提取 =====
+        function extractChinese(text) {
+            // 去掉中文标点（保留英文括号和字母数字）
+            text = text.replace(/[\u4e00-\u9fa5，、。；：""''（）【】]/g, ' ');
+            const words = text.split(/\s+/).filter(w => w);
+            const seq = [];
+            for (const w of words) {
+                if (w.indexOf('(') !== -1 && w.indexOf(')') !== -1) {
+                    const m = w.match(/\(([A-Z]+)\)/);
+                    if (m) {
+                        const point = m[1];
+                        const prefix = w.slice(0, w.indexOf('('));
+                        const mRoute = prefix.match(/([A-Z]\d+)$/);
+                        if (mRoute) seq.push(mRoute[1]);
+                        seq.push(point);
+                    }
+                } else if (/^[A-Z]\d+[A-Z]{2,5}$/.test(w) || /^[A-Z]\d+P\d+$/.test(w)) {
+                    const m = w.match(/^([A-Z]\d+)([A-Z]{2,5}|P\d+)$/);
+                    if (m) {
+                        seq.push(m[1]);
+                        seq.push(m[2]);
+                    }
+                } else if (/^[A-Z]\d+$/.test(w)) {
+                    seq.push(w);
+                } else if (isOpenPoint(w) || isPPoint(w)) {
+                    seq.push(w);
+                }
+            }
+            return seq;
+        }
 
-    if "last_processed_input_route" not in st.session_state:
-        st.session_state.last_processed_input_route = ""
-    if "result_text_route" not in st.session_state:
-        st.session_state.result_text_route = ""
+        // ===== 步骤 =====
+        function step1Extract(text) {
+            if (/N\d{5,6}(\.\d+)?\s+E\d{6,7}(\.\d+)?/.test(text)) {
+                return { seq: extractTable(text), fmt: 'table' };
+            } else {
+                return { seq: extractChinese(text), fmt: 'chinese' };
+            }
+        }
 
-    input_text_route = st.text_area(
-        "📋 请输入待处理的航路文本",
-        key="input_text_route_g",
-        height=300,
-        placeholder="粘贴民航航线数据，支持多行表格格式/纯中文描述格式..."
-    )
+        function step2Reduce(seq) {
+            let L = seq.slice();
+            let changed = true;
+            while (changed) {
+                changed = false;
+                const n = L.length;
+                const candidates = [];
+                for (let i = 0; i < n; i += 2) {
+                    if (!isOpenPoint(L[i])) continue;
+                    if (i + 1 >= n) continue;
+                    const firstRoute = cleanRoute(L[i + 1]);
+                    if (!isOpenRoute(firstRoute)) continue;
+                    for (let j = i + 2; j < n; j += 2) {
+                        let allSame = true;
+                        for (let k = i + 1; k < j; k += 2) {
+                            const rt = cleanRoute(L[k]);
+                            if (rt !== firstRoute || !isOpenRoute(rt)) {
+                                allSame = false;
+                                break;
+                            }
+                        }
+                        if (!allSame) break;
+                        if (isOpenPoint(L[j])) {
+                            const length = Math.floor((j - i) / 2);
+                            if (length >= 2) {
+                                candidates.push([i, j, length]);
+                            }
+                        }
+                    }
+                }
+                if (candidates.length === 0) break;
+                candidates.sort((a, b) => b[2] - a[2]);
+                const [bestI, bestJ] = candidates[0];
+                const newSegment = [L[bestI], L[bestI + 1], L[bestJ]];
+                L = L.slice(0, bestI).concat(newSegment).concat(L.slice(bestJ + 1));
+                changed = true;
+            }
+            return L;
+        }
 
-    btn_col1, btn_col2, btn_col3 = st.columns([2, 2, 8])
-    with btn_col1:
-        process_btn = st.button("⚙️ 处理", type="primary", use_container_width=True, key="process_route_g")
-    with btn_col2:
-        clear_btn = st.button("🗑️ 清空", use_container_width=True, key="clear_route_g")
+        function step3AddHash(seq) {
+            const pts = seq.filter((_, i) => i % 2 === 0);
+            const rts = seq.filter((_, i) => i % 2 === 1);
+            const res = [pts[0]];
+            for (let i = 0; i < rts.length; i++) {
+                const rt = rts[i];
+                const left = pts[i];
+                const right = pts[i + 1];
+                let needHash = false;
+                if (isClosedRoute(rt)) needHash = true;
+                else if (isPPoint(left) || isPPoint(right)) needHash = true;
+                res.push(needHash ? '#' + rt : rt);
+                res.push(right);
+            }
+            return res;
+        }
 
-    if clear_btn:
-        st.session_state.input_text_route_g = ""
-        st.session_state.last_processed_input_route = ""
-        st.session_state.result_text_route = ""
-        st.rerun()
+        // ===== 主流程 =====
+        function process() {
+            const status = document.getElementById('status');
+            const inputText = document.getElementById('inputText').value;
+            if (!inputText.trim()) {
+                status.innerHTML = '<div class="error">请输入待处理的航路文本</div>';
+                document.getElementById('resultSection').style.display = 'none';
+                return;
+            }
+            try {
+                const { seq: seq1, fmt } = step1Extract(inputText);
+                let seq = seq1;
+                if (fmt === 'table') {
+                    seq = step2Reduce(seq);
+                    seq = step3AddHash(seq);
+                }
+                const result = seq.length > 0 ? seq.join(' ') : '⚠️ 未提取到有效航路数据';
 
-    if process_btn and st.session_state.get("input_text_route_g", "").strip():
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        total_steps = 4
-        current_step = 0
+                document.getElementById('resultBox').textContent = result;
+                document.getElementById('resultSection').style.display = 'block';
+                status.innerHTML = '<div class="success">✅ 处理完成</div>';
+            } catch (e) {
+                status.innerHTML = '<div class="error">❌ 处理失败：' + escapeHtml(e.message) + '</div>';
+                console.error(e);
+            }
+        }
 
-        try:
-            current_step += 1
-            progress_bar.progress(current_step / total_steps)
-            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（识别输入类型）")
-            seq, fmt = step1_extract(st.session_state.input_text_route_g)
+        // ===== 事件绑定 =====
+        const inputEl = document.getElementById('inputText');
+        let saveTimer = null;
+        inputEl.addEventListener('input', () => {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => saveInput(inputEl.value), 500);
+        });
 
-            current_step += 1
-            progress_bar.progress(current_step / total_steps)
-            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（精简相同开放航路）")
-            if fmt == 'table':
-                seq = step2_reduce(seq)
+        document.getElementById('processBtn').addEventListener('click', process);
 
-            current_step += 1
-            progress_bar.progress(current_step / total_steps)
-            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（添加航路#前缀）")
-            if fmt == 'table':
-                seq = step3_add_hash(seq)
+        document.getElementById('clearBtn').addEventListener('click', () => {
+            inputEl.value = '';
+            saveInput('');
+            document.getElementById('resultSection').style.display = 'none';
+            document.getElementById('status').innerHTML = '';
+            document.getElementById('copyStatus').textContent = '';
+        });
 
-            current_step += 1
-            progress_bar.progress(current_step / total_steps)
-            status_text.text(f"处理中：第{current_step}步/共{total_steps}步（生成最终结果）")
-            result = ' '.join(seq) if seq else "⚠️ 未提取到有效航路数据"
+        document.getElementById('copyBtn').addEventListener('click', async () => {
+            const text = document.getElementById('resultBox').textContent;
+            if (!text) { return; }
+            const statusEl = document.getElementById('copyStatus');
+            try {
+                await navigator.clipboard.writeText(text);
+                statusEl.textContent = '✅ 已复制';
+                setTimeout(() => { statusEl.textContent = ''; }, 1500);
+            } catch (e) {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                try {
+                    document.execCommand('copy');
+                    statusEl.textContent = '✅ 已复制';
+                    setTimeout(() => { statusEl.textContent = ''; }, 1500);
+                } catch (e2) {
+                    statusEl.textContent = '❌ 复制失败';
+                    statusEl.style.color = '#d32f2f';
+                }
+                document.body.removeChild(ta);
+            }
+        });
 
-            st.session_state.result_text_route = result
-            st.session_state.last_processed_input_route = st.session_state.input_text_route_g
-
-            progress_bar.empty()
-            status_text.empty()
-            st.success("✅ 处理完成！结果如下：")
-
-        except Exception as e:
-            progress_bar.empty()
-            status_text.empty()
-            st.error(f"❌ 处理失败：{str(e)}")
-            with st.expander("🔍 查看详细错误信息", expanded=False):
-                st.code(traceback.format_exc(), language="text")
-
-    if st.session_state.get("result_text_route", ""):
-        current_input = st.session_state.get("input_text_route_g", "")
-        last_input = st.session_state.last_processed_input_route
-
-        st.subheader("📊 处理结果", divider="blue")
-
-        if current_input != last_input:
-            st.warning("⚠️ 输入已更改，当前显示的是上一次处理的结果，如需更新请点击「处理」按钮。")
-
-        st.code(st.session_state.result_text_route, language="text")
-
-    if not st.session_state.get("result_text_route", "") and not st.session_state.get("input_text_route_g", "").strip():
-        st.info("💡 提示：粘贴航路数据后，点击「处理」即可，支持30+行不规整表格数据")
-
-    st.markdown("---")
-    st.caption("✈️ 支持表格格式（带N/E坐标）/中文描述格式，自动精简航路+添加#前缀")
-
+        // ===== 页面加载：恢复上次输入 =====
+        window.addEventListener('DOMContentLoaded', () => {
+            const saved = loadInput();
+            if (saved) inputEl.value = saved;
+        });
+    </script>
+</body>
+</html>
+"""
+    components.html(G_HTML, height=900, scrolling=True)
 
 # ==============================
 # 功能 H：检查单/脚本生成器（HTML/JS 沙箱版 + localStorage 持久化）
