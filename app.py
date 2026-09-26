@@ -249,7 +249,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     new_k5 = old_k5 + total_flights
     ws.cell(row=5, column=11).value = new_k5
 
-    # ---- 6. M5：昨日运行地点 ----
+    # ---- 6. M5：昨日运行地点（去掉 /通航运输 后缀） ----
     m5_locations = set()
     for _, row in valid_df.iterrows():
         dep = str(row[dep_col]).strip() if pd.notna(row[dep_col]) else ''
@@ -259,7 +259,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
         if arr:
             m5_locations.add(arr)
     m5_list = sorted(m5_locations)
-    m5_value = '、'.join(m5_list) + '/通航运输' if m5_list else '/通航运输'
+    m5_value = '、'.join(m5_list) if m5_list else ''
     ws.cell(row=5, column=13).value = m5_value
 
     # ---- 7. N5：使用航空器数量 ----
@@ -267,7 +267,7 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
     unique_regs = reg_series_valid.astype(str).unique()
     ws.cell(row=5, column=14).value = len(unique_regs)
 
-    # ---- 8. S5：次日（明日）计划运行地点 ----
+    # ---- 8. S5：次日（明日）计划运行地点（保留 /通航运输 后缀） ----
     future_display = ""
     if future_df is not None and not future_df.empty:
         future_locations = set()
