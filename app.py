@@ -3729,7 +3729,7 @@ def run_feature_chk():
     components.html(CHK_HTML, height=1600, scrolling=True)
 
 # ==============================
-# 功能 I：WX AND NOTAM 邮件生成（HTML/JS 沙箱版）
+# 功能 I：WX AND NOTAM 邮件生成（HTML/JS 沙箱版 + 完整持久化）
 # ==============================
 def run_feature_wx_mail():
     WX_HTML = r"""
@@ -3771,12 +3771,14 @@ def run_feature_wx_mail():
         button:hover { background:#f5f5f5; }
         input[type=file] { padding:6px; font-size:15px; }
         .toolbar { margin: 12px 0; }
+        #cacheStatus:empty { display: none; }
     </style>
 </head>
 <body>
     <h2>✉️ 飞行任务邮件生成器</h2>
+    <div id="cacheStatus"></div>
 
-    <p>上传航段表（Excel 或 CSV）：</p>
+    <p>上传航段表（Excel 或 CSV）：<span id="fileStatus" style="color:#2e7d32; font-size:15px; margin-left:8px;"></span></p>
     <input type="file" id="flightFile" accept=".csv,.xlsx,.xls">
 
     <p>粘贴文本飞行计划：</p>
@@ -3860,6 +3862,8 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
 
         const CLICKED_KEY = 'clickedMails';
         const MAILS_KEY = 'wx_generated_mails_v1';
+        const FLIGHT_DB_KEY = 'wx_flight_rows_v1';   // 航段表（新增）
+        const PLAN_TEXT_KEY = 'wx_plan_text_v1';     // 文本计划（新增）
 
         let pilotMap = {};
         let flightRows = [];
@@ -3870,6 +3874,15 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             clickedSet = new Set(JSON.parse(localStorage.getItem(CLICKED_KEY) || '[]'));
         } catch (e) { clickedSet = new Set(); }
 
+        function pad2(n) { return String(n).padStart(2, '0'); }
+
+        function nowTimestamp() {
+            const now = new Date();
+            return now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
+                   ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+        }
+
+        // ===== 存储封装 =====
         function saveMails() {
             try { localStorage.setItem(MAILS_KEY, JSON.stringify(generatedMails)); } catch (e) {}
         }
@@ -3879,7 +3892,31 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
                 return raw ? JSON.parse(raw) : [];
             } catch (e) { return []; }
         }
+        function saveFlightCache(fileName) {
+            try {
+                const payload = {
+                    timestamp: nowTimestamp(),
+                    filename: fileName,
+                    rows: flightRows
+                };
+                localStorage.setItem(FLIGHT_DB_KEY, JSON.stringify(payload));
+                return payload.timestamp;
+            } catch (e) { console.error('保存航段缓存失败：', e); return null; }
+        }
+        function loadFlightCache() {
+            try {
+                const raw = localStorage.getItem(FLIGHT_DB_KEY);
+                return raw ? JSON.parse(raw) : null;
+            } catch (e) { return null; }
+        }
+        function savePlanText(text) {
+            try { localStorage.setItem(PLAN_TEXT_KEY, text); } catch (e) {}
+        }
+        function loadPlanText() {
+            try { return localStorage.getItem(PLAN_TEXT_KEY) || ''; } catch (e) { return ''; }
+        }
 
+        // ===== 内置名单解析 =====
         function parseCSV(text) {
             const rows = [];
             let row = [], current = '', inQuotes = false;
@@ -3916,6 +3953,7 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             }
         }
 
+        // ===== 文件读取 =====
         function readFile(file, callback) {
             const reader = new FileReader();
             const ext = file.name.split('.').pop().toLowerCase();
@@ -3962,45 +4000,72 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             return s;
         }
 
+        // 把原始二维数组解析成 flightRows
+        function buildFlightRows(rows) {
+            let headerIdx = -1;
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i].map(c => String(c).trim());
+                if (r.includes('飞机注册号') && r.includes('出发地') && r.includes('计划出发')) { headerIdx = i; break; }
+            }
+            if (headerIdx === -1) return null;
+            const headers = rows[headerIdx].map(h => String(h).trim());
+            const col = {
+                flight: headers.indexOf('飞机注册号'),
+                depICAO: headers.indexOf('出发地'),
+                arrICAO: headers.indexOf('到达地'),
+                date: headers.indexOf('出发日期'),
+                depTime: headers.indexOf('计划出发'),
+                arrTime: headers.indexOf('预计到达')
+            };
+            if (Object.values(col).some(v => v === -1)) return null;
+            const out = [];
+            for (let i = headerIdx + 1; i < rows.length; i++) {
+                const r = rows[i];
+                if (!r || r.length <= col.flight) continue;
+                const flight = String(r[col.flight] || '').trim();
+                if (!flight) continue;
+                out.push({
+                    flight: flight,
+                    depICAO: String(r[col.depICAO] || '').trim(),
+                    arrICAO: String(r[col.arrICAO] || '').trim(),
+                    date: normalizeDate(r[col.date]),
+                    depTime: normalizeTime(r[col.depTime]),
+                    arrTime: normalizeTime(r[col.arrTime])
+                });
+            }
+            return out;
+        }
+
+        // ===== 上传文件 =====
         document.getElementById('flightFile').addEventListener('change', function(e) {
             const file = e.target.files[0]; if (!file) return;
             readFile(file, (data, type) => {
                 const rows = parseData(data, type);
-                let headerIdx = -1;
-                for (let i = 0; i < rows.length; i++) {
-                    const r = rows[i].map(c => String(c).trim());
-                    if (r.includes('飞机注册号') && r.includes('出发地') && r.includes('计划出发')) { headerIdx = i; break; }
+                const built = buildFlightRows(rows);
+                if (built === null) {
+                    document.getElementById('fileStatus').textContent = '❌ 解析失败：缺少必要列';
+                    document.getElementById('fileStatus').style.color = '#d32f2f';
+                    return;
                 }
-                if (headerIdx === -1) { alert('航段表未找到标题行'); return; }
-                const headers = rows[headerIdx].map(h => String(h).trim());
-                const col = {
-                    flight: headers.indexOf('飞机注册号'),
-                    depICAO: headers.indexOf('出发地'),
-                    arrICAO: headers.indexOf('到达地'),
-                    date: headers.indexOf('出发日期'),
-                    depTime: headers.indexOf('计划出发'),
-                    arrTime: headers.indexOf('预计到达')
-                };
-                if (Object.values(col).some(v => v === -1)) { alert('航段表缺少必要列'); return; }
-                flightRows = [];
-                for (let i = headerIdx + 1; i < rows.length; i++) {
-                    const r = rows[i];
-                    if (!r || r.length <= col.flight) continue;
-                    const flight = String(r[col.flight] || '').trim();
-                    if (!flight) continue;
-                    flightRows.push({
-                        flight: flight,
-                        depICAO: String(r[col.depICAO] || '').trim(),
-                        arrICAO: String(r[col.arrICAO] || '').trim(),
-                        date: normalizeDate(r[col.date]),
-                        depTime: normalizeTime(r[col.depTime]),
-                        arrTime: normalizeTime(r[col.arrTime])
-                    });
-                }
-                alert('✅ 航段表已加载，共 ' + flightRows.length + ' 条');
+                flightRows = built;
+                const ts = saveFlightCache(file.name);
+                const statusEl = document.getElementById('fileStatus');
+                statusEl.style.color = '#2e7d32';
+                statusEl.textContent = '✅ 已加载 ' + built.length + ' 条（' + (ts || '') + '）';
+                document.getElementById('cacheStatus').innerHTML = '';
             });
         });
 
+        // ===== 文本计划：自动保存 =====
+        let planTextTimer = null;
+        document.getElementById('planText').addEventListener('input', function(e) {
+            clearTimeout(planTextTimer);
+            planTextTimer = setTimeout(() => {
+                savePlanText(e.target.value);
+            }, 500);
+        });
+
+        // ===== 计划解析 =====
         function parsePlan(text) {
             const lines = text.split(/\r?\n/);
             const result = [];
@@ -4036,7 +4101,7 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             return new Date() >= depDateTime;
         }
 
-        // ============ 生成邮件 ============
+        // ===== 生成邮件 =====
         function generate() {
             const outputDiv = document.getElementById('output');
             outputDiv.innerHTML = '';
@@ -4097,7 +4162,7 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             }
         }
 
-        // ============ 渲染列表 ============
+        // ===== 渲染列表 =====
         function renderMails() {
             const container = document.getElementById('mailList');
             container.innerHTML = '';
@@ -4176,17 +4241,41 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
             renderMails();
         }, 60000);
 
-        initPilotMap();
-        generatedMails = loadMails();
+        // ===== 页面加载：恢复上次状态 =====
         window.addEventListener('DOMContentLoaded', () => {
+            initPilotMap();
+            generatedMails = loadMails();
             renderMails();
+
+            // 1) 恢复航段表
+            const flightCache = loadFlightCache();
+            if (flightCache && flightCache.rows && flightCache.rows.length > 0) {
+                flightRows = flightCache.rows;
+                document.getElementById('cacheStatus').innerHTML =
+                    '<div class="info">💾 已恢复上次上传：' +
+                    escapeHtml(flightCache.filename || '未知文件') +
+                    '（' + escapeHtml(flightCache.timestamp || '') + '），共 ' +
+                    flightCache.rows.length + ' 条航段</div>';
+                document.getElementById('fileStatus').textContent =
+                    '✅ 已加载 ' + flightCache.rows.length + ' 条';
+                document.getElementById('fileStatus').style.color = '#2e7d32';
+            }
+
+            // 2) 恢复文本计划
+            const savedPlan = loadPlanText();
+            if (savedPlan) {
+                document.getElementById('planText').value = savedPlan;
+            }
         });
+
+        function escapeHtml(s) {
+            return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
     </script>
 </body>
 </html>
 """
     components.html(WX_HTML, height=1200, scrolling=True)
-
 
 # ==============================
 # 主界面
