@@ -2425,6 +2425,7 @@ def run_feature_f():
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
+        .upload-hint { font-size: 15px; color: #555; margin: 4px 0 6px 0; }
         input[type=file] { padding: 6px; font-size: 15px; }
         button { padding: 9px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
         button:hover { background:#f5f5f5; }
@@ -2454,6 +2455,7 @@ def run_feature_f():
     </style>
 </head>
 <body>
+    <div class="upload-hint">📤 上传未来航段（北京时间）：</div>
     <input type="file" id="fileInput" accept=".xlsx,.xls">
     <div id="status"></div>
 
@@ -2826,7 +2828,7 @@ def run_feature_f():
 
                     document.getElementById('result').style.display = 'block';
                     status.innerHTML = '<div class="success">✅ 文件读取成功：' +
-                        escapeHtml(file.name) + '（历史累计 ' + history.records.length + ' 条）</div>';
+                        escapeHtml(file.name) + '（' + timestamp + '，历史累计 ' + history.records.length + ' 条）</div>';
                     renderPlans(sortedNewPlans, changes, false);
                     renderHistory(history);
                 } catch (err) {
