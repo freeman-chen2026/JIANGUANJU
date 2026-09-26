@@ -557,6 +557,7 @@ def run_feature_b():
             else:
                 reg_list = []
 
+            # ============ 汇报文案 ============
             parts = []
             if landed_count > 0:
                 parts.append(f"{landed_count}班已落地")
@@ -566,12 +567,9 @@ def run_feature_b():
                 parts.append(f"{not_executed_count}班未起飞")
 
             if not parts:
-                report = "今天无飞行计划"
+                report = "下午好，天成今日无飞行计划"
             else:
-                if landed_count > 0 and unlanded_count == 0 and not_executed_count == 0:
-                    report = "今天飞完了"
-                else:
-                    report = "今天" + "、".join(parts)
+                report = "下午好，天成今日" + "、".join(parts)
 
             if reg_list:
                 plane_text = f"今日有飞行计划的飞机：{'、'.join(reg_list)}"
@@ -589,10 +587,11 @@ def run_feature_b():
             if reg_list:
                 st.write("**飞机注册号列表：**", "、".join(reg_list))
 
+            # 组装汇报文案（中间空一行）
             full_report = report
             if plane_text:
-                full_report += "\n" + plane_text
-            st.text_area("📋 汇报文案（可复制）", full_report, height=120)
+                full_report += "\n\n" + plane_text
+            st.text_area("📋 汇报文案（可复制）", full_report, height=140)
 
             wb = st.session_state.template_wb
             ws = wb.active
@@ -709,6 +708,7 @@ def run_feature_b():
         else:
             st.info("👆 请上传航段数据 Excel 文件。")
 
+
 # ==============================
 # 功能 C：生成每日运行跟踪表
 # ==============================
@@ -776,6 +776,7 @@ def run_feature_c():
                 else:
                     status_text = "未实施"
 
+                # ============ 开始时间 ============
                 if has_actual_depart:
                     valid_depart = df[df["实际出发"].notna()]
                     if not valid_depart.empty:
@@ -803,21 +804,65 @@ def run_feature_c():
                     else:
                         start_time = ""
 
+                # ============ 计划结束时间：取所有航段中最晚的结束时刻（考虑跨天） ============
+                plan_end = ""
                 if "预计到达" in df.columns:
-                    plan_end_times = df["预计到达"].dropna().apply(lambda x: str(x).strip())
-                    if not plan_end_times.empty:
-                        latest_plan = max(plan_end_times, key=lambda t: t if t else "00:00")
-                        plan_end = format_time(latest_plan)
-                    else:
-                        plan_end = ""
-                else:
-                    plan_end = ""
+                    end_datetimes = []
+                    for _, row in df.iterrows():
+                        arr_time_val = row.get("预计到达")
+                        if pd.isna(arr_time_val) or str(arr_time_val).strip() == "":
+                            continue
+                        # 优先用"到达日期"，缺则回退"出发日期"
+                        arr_date_val = None
+                        if "到达日期" in df.columns:
+                            arr_date_val = row.get("到达日期")
+                        if arr_date_val is None or pd.isna(arr_date_val) or str(arr_date_val).strip() == "":
+                            arr_date_val = row.get("出发日期")
+                        if pd.isna(arr_date_val) or str(arr_date_val).strip() == "":
+                            continue
+                        try:
+                            arr_date = pd.to_datetime(arr_date_val)
+                            time_str = format_time(arr_time_val)
+                            parts_t = time_str.split(":")
+                            h = int(parts_t[0])
+                            m = int(parts_t[1])
+                            s = int(parts_t[2]) if len(parts_t) > 2 else 0
+                            end_dt = arr_date.replace(hour=h, minute=m, second=s)
+                            end_datetimes.append(end_dt)
+                        except Exception:
+                            continue
+                    if end_datetimes:
+                        latest_end = max(end_datetimes)
+                        plan_end = latest_end.strftime("%H:%M:%S")
 
+                # ============ 实际结束时间（只在全部落地时填） ============
                 if all_landed and "实际到达" in df.columns:
-                    actual_end_times = df["实际到达"].dropna().apply(lambda x: str(x).strip())
-                    if not actual_end_times.empty:
-                        latest_actual = max(actual_end_times, key=lambda t: t if t else "00:00")
-                        actual_end = format_time(latest_actual)
+                    actual_end_datetimes = []
+                    for _, row in df.iterrows():
+                        arr_time_val = row.get("实际到达")
+                        if pd.isna(arr_time_val) or str(arr_time_val).strip() == "":
+                            continue
+                        arr_date_val = None
+                        if "到达日期" in df.columns:
+                            arr_date_val = row.get("到达日期")
+                        if arr_date_val is None or pd.isna(arr_date_val) or str(arr_date_val).strip() == "":
+                            arr_date_val = row.get("出发日期")
+                        if pd.isna(arr_date_val) or str(arr_date_val).strip() == "":
+                            continue
+                        try:
+                            arr_date = pd.to_datetime(arr_date_val)
+                            time_str = format_time(arr_time_val)
+                            parts_t = time_str.split(":")
+                            h = int(parts_t[0])
+                            m = int(parts_t[1])
+                            s = int(parts_t[2]) if len(parts_t) > 2 else 0
+                            end_dt = arr_date.replace(hour=h, minute=m, second=s)
+                            actual_end_datetimes.append(end_dt)
+                        except Exception:
+                            continue
+                    if actual_end_datetimes:
+                        latest_actual = max(actual_end_datetimes)
+                        actual_end = latest_actual.strftime("%H:%M:%S")
                     else:
                         actual_end = ""
                 else:
@@ -931,6 +976,7 @@ def run_feature_c():
             except Exception as e:
                 st.error(f"处理失败：{e}")
                 st.exception(e)
+
 
 # ==============================
 # 功能 D：通航脚本生成器（完整版，包含所有脚本生成函数）
