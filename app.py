@@ -2475,6 +2475,7 @@ def run_feature_f():
         input[type=file] { padding: 6px; font-size: 15px; }
         button { padding: 9px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
         button:hover { background:#f5f5f5; }
+        .toggle-bar { margin: 6px 0 12px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
         .reg-block { margin-bottom: 20px; }
         .reg-title { font-weight: bold; font-size: 19px; margin-bottom: 8px; }
         .new-flag { color:#d32f2f; font-size: 1rem; margin-left:8px; font-weight: normal; }
@@ -2506,6 +2507,10 @@ def run_feature_f():
     <div id="status"></div>
 
     <div id="result" style="display:none;">
+        <div class="toggle-bar">
+            <button id="toggleDomesticBtn">👁️ 显示全部计划（含纯内地）</button>
+            <span id="domesticInfo" class="status"></span>
+        </div>
         <div id="plans"></div>
 
         <details>
@@ -2527,6 +2532,29 @@ def run_feature_f():
         const HISTORY_KEY = 'worldtime_history_v2';
         const LAST_PLANS_KEY = 'worldtime_last_plans_v2';
         const LAST_FILE_KEY = 'worldtime_last_file_v2';
+
+        // ======================= 全局状态：纯内地过滤 =======================
+        let showAllPlans = false;     // false = 默认隐藏纯内地；true = 显示全部
+        let lastPlans = null;         // 上次渲染的 plans（用于切换按钮时重绘）
+        let lastChanges = null;
+        let lastIsRestored = false;
+
+        // 判断四字码是否为中国大陆机场（Z 开头，ZM 蒙古除外）
+        function isMainlandAirport(icao) {
+            if (!icao) return false;
+            const s = String(icao).trim().toUpperCase();
+            if (s.length !== 4) return false;
+            if (s.charAt(0) !== 'Z') return false;
+            if (s.indexOf('ZM') === 0) return false;
+            return true;
+        }
+
+        // 判断一行航段是否为"纯内地航段"（起飞和降落都是中国大陆机场）
+        function isDomesticLine(line) {
+            const m = line.match(/ETD\s+(\S+)\s+.*?ETA\s+(\S+)/);
+            if (!m) return false;
+            return isMainlandAirport(m[1]) && isMainlandAirport(m[2]);
+        }
 
         // ======================= localStorage 封装 =======================
         function loadHistory() {
@@ -2747,15 +2775,49 @@ def run_feature_f():
         }
 
         // ======================= 渲染 =======================
+        function updateToggleBtn(hiddenCount) {
+            const btn = document.getElementById('toggleDomesticBtn');
+            const info = document.getElementById('domesticInfo');
+            if (!btn) return;
+            if (showAllPlans) {
+                btn.textContent = '🔒 隐藏纯内地计划';
+                info.textContent = '';
+            } else {
+                btn.textContent = '👁️ 显示全部计划（含纯内地）';
+                info.textContent = hiddenCount > 0
+                    ? '（已隐藏 ' + hiddenCount + ' 条纯内地航段）'
+                    : '（当前无纯内地航段）';
+            }
+        }
+
         function renderPlans(plans, changes, isRestored) {
+            // 记录当前数据，供按钮切换时重绘
+            lastPlans = plans;
+            lastChanges = changes;
+            lastIsRestored = isRestored;
+
             const container = document.getElementById('plans');
             container.innerHTML = '';
             let fullText = '';
+            let hiddenCount = 0;
+            let visibleRegCount = 0;
 
             for (const reg in plans) {
                 const text = plans[reg];
                 const lines = text.split('\n');
-                const routes = lines.filter(l => l !== reg);
+                let routes = lines.filter(l => l !== reg);
+
+                // 纯内地过滤（仅渲染层，原始数据不变）
+                if (!showAllPlans) {
+                    const before = routes.length;
+                    routes = routes.filter(line => !isDomesticLine(line));
+                    hiddenCount += before - routes.length;
+                }
+
+                // 该飞机所有航段都被过滤掉，则整块隐藏
+                if (routes.length === 0) continue;
+                visibleRegCount++;
+
                 const hasChanges = !isRestored && routes.some(line => changes[reg + '\u0001' + line]);
 
                 const block = document.createElement('div');
@@ -2797,7 +2859,13 @@ def run_feature_f():
                 fullText += reg + '\n' + routes.join('\n') + '\n\n';
             }
 
+            if (visibleRegCount === 0 && !showAllPlans) {
+                container.innerHTML =
+                    '<div class="info">📭 所有计划均为纯内地航段，已全部隐藏。点击上方按钮可查看全部。</div>';
+            }
+
             document.getElementById('fullTextBox').textContent = fullText.trim();
+            updateToggleBtn(hiddenCount);
         }
 
         function renderHistory(history) {
@@ -2886,19 +2954,30 @@ def run_feature_f():
         }
 
         window.addEventListener('DOMContentLoaded', () => {
-            const lastPlans = loadJSON(LAST_PLANS_KEY);
+            // 绑定纯内地切换按钮
+            document.getElementById('toggleDomesticBtn').addEventListener('click', () => {
+                showAllPlans = !showAllPlans;
+                if (lastPlans) {
+                    renderPlans(lastPlans, lastChanges, lastIsRestored);
+                }
+            });
+
+            const lastPlansCached = loadJSON(LAST_PLANS_KEY);
             const lastFile = loadJSON(LAST_FILE_KEY);
             const history = loadHistory();
 
-            if (lastPlans && Object.keys(lastPlans).length > 0) {
+            if (lastPlansCached && Object.keys(lastPlansCached).length > 0) {
                 document.getElementById('result').style.display = 'block';
                 const status = document.getElementById('status');
                 const info = lastFile
                     ? '（上次加载：' + escapeHtml(lastFile.name) + '，' + escapeHtml(lastFile.timestamp) + '）'
                     : '';
                 status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
-                renderPlans(lastPlans, {}, true);
+                renderPlans(lastPlansCached, {}, true);
                 renderHistory(history);
+            } else {
+                // 无数据时也要初始化按钮文案
+                updateToggleBtn(0);
             }
         });
 
@@ -2921,6 +3000,13 @@ def run_feature_f():
 </html>
 """
     components.html(F_HTML, height=1000, scrolling=True)
+
+
+
+
+
+
+
 
 
 # ==============================
