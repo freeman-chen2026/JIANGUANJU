@@ -2458,548 +2458,11 @@ def run_feature_e():
         st.download_button("📥 下载完整统计表 (CSV)", csv, "shift_statistics.csv", "text/csv", key="e_download")
 
 
-# ==============================
-# 功能 F：世界时行程（HTML/JS 沙箱版 + localStorage 持久化）
-# ==============================
-def run_feature_f():
-    F_HTML = r"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>世界时行程转换</title>
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
-    <style>
-        body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
-        .upload-hint { font-size: 15px; color: #555; margin: 4px 0 6px 0; }
-        input[type=file] { padding: 6px; font-size: 15px; }
-        button { padding: 9px 16px; font-size: 15px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; margin-top: 6px; }
-        button:hover { background:#f5f5f5; }
-        .toggle-bar { margin: 6px 0 12px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-        .reg-block { margin-bottom: 20px; }
-        .reg-title { font-weight: bold; font-size: 19px; margin-bottom: 8px; }
-        .new-flag { color:#d32f2f; font-size: 1rem; margin-left:8px; font-weight: normal; }
-        .seg-list {
-            background:#f7f7f7; border: 1px solid #ddd; border-radius: 6px;
-            padding: 10px 14px; font-family: Consolas, "Courier New", monospace;
-            font-size: 16px; line-height: 1.9; color:#222;
-        }
-        .seg-line { padding: 3px 0; }
-        .status { color:#555; font-size: 15px; margin-left: 8px; }
-        .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; }
-        .success { color:#2e7d32; background:#e8f5e9; padding:8px; border-radius:4px; margin:6px 0; }
-        .info { color:#1976d2; background:#e3f2fd; padding:8px; border-radius:4px; margin:6px 0; }
-        details { margin: 10px 0; padding: 8px; border: 1px solid #eee; border-radius: 4px; background:#fafafa; }
-        summary { cursor: pointer; font-weight: bold; padding: 4px 0; font-size: 16px; }
-        ol { margin: 6px 0 6px 20px; padding: 0; }
-        li { margin: 2px 0; font-size: 15px; }
-        .full-text-box {
-            background:#f5f5f5; padding:10px; border-radius:4px;
-            font-family: Consolas, "Courier New", monospace; font-size: 16px;
-            white-space: pre; overflow-x: auto; border:1px solid #e0e0e0;
-            max-height: 400px; overflow-y: auto;
-        }
-    </style>
-</head>
-<body>
-    <div class="upload-hint">📤 上传未来航段（北京时间）：</div>
-    <input type="file" id="fileInput" accept=".xlsx,.xls">
-    <div id="status"></div>
 
-    <div id="result" style="display:none;">
-        <div class="toggle-bar">
-            <button id="toggleDomesticBtn">👁️ 显示全部计划（含纯内地）</button>
-            <span id="domesticInfo" class="status"></span>
-        </div>
-        <div id="plans"></div>
 
-        <details>
-            <summary>📦 全部计划合并（点击展开）</summary>
-            <div class="full-text-box" id="fullTextBox"></div>
-        </details>
 
-        <details>
-            <summary>📜 历史记录</summary>
-            <div id="historyList"></div>
-            <button id="clearHistoryBtn" style="margin-top:8px;">🗑️ 清除所有历史</button>
-        </details>
-    </div>
 
-    <script>
-        // ======================= 常量 =======================
-        const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
-        const PRIORITY = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R'];
-        const HISTORY_KEY = 'worldtime_history_v2';
-        const LAST_PLANS_KEY = 'worldtime_last_plans_v2';
-        const LAST_FILE_KEY = 'worldtime_last_file_v2';
 
-        // ======================= 全局状态：纯内地过滤 =======================
-        let showAllPlans = false;     // false = 默认隐藏纯内地；true = 显示全部
-        let lastPlans = null;         // 上次渲染的 plans（用于切换按钮时重绘）
-        let lastChanges = null;
-        let lastIsRestored = false;
-
-        // 判断四字码是否为中国大陆机场（Z 开头，ZM 蒙古除外）
-        function isMainlandAirport(icao) {
-            if (!icao) return false;
-            const s = String(icao).trim().toUpperCase();
-            if (s.length !== 4) return false;
-            if (s.charAt(0) !== 'Z') return false;
-            if (s.indexOf('ZM') === 0) return false;
-            return true;
-        }
-
-        // 判断一行航段是否为"纯内地航段"（起飞和降落都是中国大陆机场）
-        function isDomesticLine(line) {
-            const m = line.match(/ETD\s+(\S+)\s+.*?ETA\s+(\S+)/);
-            if (!m) return false;
-            return isMainlandAirport(m[1]) && isMainlandAirport(m[2]);
-        }
-
-        // ======================= localStorage 封装 =======================
-        function loadHistory() {
-            try {
-                const raw = localStorage.getItem(HISTORY_KEY);
-                if (!raw) return {records: []};
-                const obj = JSON.parse(raw);
-                if (!obj.records) obj.records = [];
-                return obj;
-            } catch (e) { return {records: []}; }
-        }
-        function saveHistory(h) {
-            try { localStorage.setItem(HISTORY_KEY, JSON.stringify(h)); } catch (e) {}
-        }
-        function loadJSON(key) {
-            try {
-                const raw = localStorage.getItem(key);
-                return raw ? JSON.parse(raw) : null;
-            } catch (e) { return null; }
-        }
-        function saveJSON(key, val) {
-            try { localStorage.setItem(key, JSON.stringify(val)); } catch (e) {}
-        }
-
-        // ======================= 基础工具 =======================
-        function pad2(n) { return String(n).padStart(2, '0'); }
-        function escapeHtml(s) {
-            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-
-        function parseDate(v) {
-            if (v == null || v === '') return null;
-            if (v instanceof Date) return new Date(v.getFullYear(), v.getMonth(), v.getDate());
-            if (typeof v === 'number') {
-                const ms = Math.round((v - 25569) * 86400 * 1000);
-                const d = new Date(ms);
-                return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-            }
-            const s = String(v).trim();
-            if (!s) return null;
-            const m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
-            if (m) return new Date(parseInt(m[1]), parseInt(m[2])-1, parseInt(m[3]));
-            const d = new Date(s);
-            if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            return null;
-        }
-
-        function parseTime(v) {
-            if (v == null || v === '') return null;
-            if (v instanceof Date) return pad2(v.getHours()) + ':' + pad2(v.getMinutes());
-            if (typeof v === 'number') {
-                let frac = v;
-                if (v > 1) frac = v - Math.floor(v);
-                const totalMin = Math.round(frac * 24 * 60);
-                return pad2(Math.floor(totalMin / 60) % 24) + ':' + pad2(totalMin % 60);
-            }
-            const s = String(v).trim();
-            const m = s.match(/(\d{1,2}):(\d{2})/);
-            if (m) return pad2(parseInt(m[1])) + ':' + m[2];
-            return null;
-        }
-
-        function toUTCLabel(dateVal, timeStr) {
-            const d = parseDate(dateVal);
-            if (!d || !timeStr) return null;
-            const parts = timeStr.split(':');
-            const h = parseInt(parts[0]);
-            const m = parseInt(parts[1]);
-
-            let total = h * 60 + m - 8 * 60;
-            let dayOff = 0;
-            while (total < 0) { total += 24 * 60; dayOff--; }
-            while (total >= 24 * 60) { total -= 24 * 60; dayOff++; }
-            const uh = Math.floor(total / 60);
-            const um = total % 60;
-
-            const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            dd.setDate(dd.getDate() + dayOff);
-
-            return {
-                day: dd.getDate(),
-                month: dd.getMonth() + 1,
-                hours: uh,
-                minutes: um,
-                sortKey: dd.getFullYear() * 100000000
-                       + (dd.getMonth() + 1) * 1000000
-                       + dd.getDate() * 10000
-                       + uh * 100 + um
-            };
-        }
-
-        function formatLabel(u) {
-            if (!u) return '';
-            return pad2(u.day) + MONTHS[u.month - 1] + ' ' + pad2(u.hours) + pad2(u.minutes) + 'Z';
-        }
-
-        // ======================= 核心处理 =======================
-        function processRows(rows) {
-            let headerIdx = -1;
-            for (let i = 0; i < Math.min(rows.length, 10); i++) {
-                const vals = rows[i].map(v => String(v).trim());
-                if (vals.includes('飞机注册号') && vals.includes('出发地') && vals.includes('到达地') && vals.includes('计划出发')) {
-                    headerIdx = i;
-                    break;
-                }
-            }
-            if (headerIdx === -1) {
-                return {error: '未找到表头行（需包含：飞机注册号、出发地、到达地、计划出发）'};
-            }
-
-            const headers = rows[headerIdx].map(h => String(h).trim());
-            function findCol(cands) {
-                for (const c of cands) {
-                    const idx = headers.indexOf(c);
-                    if (idx !== -1) return idx;
-                }
-                for (const c of cands) {
-                    for (let i = 0; i < headers.length; i++) {
-                        if (headers[i].includes(c)) return i;
-                    }
-                }
-                return -1;
-            }
-
-            const colReg      = findCol(['飞机注册号', '注册号', '机号']);
-            const colDep      = findCol(['出发地']);
-            const colArr      = findCol(['到达地']);
-            const colDepDate  = findCol(['出发日期']);
-            const colDepTime  = findCol(['计划出发']);
-            const colArrDate  = findCol(['到达日期']);
-            const colArrTime  = findCol(['预计到达']);
-            const colPurpose  = findCol(['用途']);
-
-            const required = {
-                '飞机注册号': colReg, '出发地': colDep, '到达地': colArr,
-                '出发日期': colDepDate, '计划出发': colDepTime,
-                '到达日期': colArrDate, '预计到达': colArrTime, '用途': colPurpose
-            };
-            for (const name in required) {
-                if (required[name] === -1) return {error: '缺少列：' + name};
-            }
-
-            const plans = {};
-
-            for (let i = headerIdx + 1; i < rows.length; i++) {
-                const r = rows[i];
-                if (!r || r.length === 0) continue;
-                const get = idx => (idx >= 0 && idx < r.length) ? r[idx] : '';
-
-                const dep       = get(colDep);
-                const arr       = get(colArr);
-                const depDate   = get(colDepDate);
-                const depTimeRaw = get(colDepTime);
-                const arrDate   = get(colArrDate);
-                const arrTimeRaw = get(colArrTime);
-
-                if (dep === '' || arr === '' || depDate === '' || depTimeRaw === '') continue;
-
-                const depTimeStr = parseTime(depTimeRaw);
-                const arrTimeStr = parseTime(arrTimeRaw);
-                if (!depTimeStr || !arrTimeStr) continue;
-
-                const depUtc = toUTCLabel(depDate, depTimeStr);
-                const arrUtc = toUTCLabel(arrDate, arrTimeStr);
-                if (!depUtc || !arrUtc) continue;
-
-                let reg = get(colReg);
-                if (reg === '' || reg == null) reg = 'N/A';
-                else reg = String(reg).trim();
-
-                const use = String(get(colPurpose) || '');
-                const flightType = use.indexOf('调机') !== -1 ? 'FERRY' : 'PAX';
-
-                const line = 'ETD ' + String(dep).trim() + ' ' + formatLabel(depUtc) +
-                             ' // ETA ' + String(arr).trim() + ' ' + formatLabel(arrUtc) +
-                             '  ' + flightType;
-
-                if (!plans[reg]) plans[reg] = [];
-                plans[reg].push({sortKey: depUtc.sortKey, line: line});
-            }
-
-            const result = {};
-            for (const reg in plans) {
-                plans[reg].sort((a, b) => a.sortKey - b.sortKey);
-                const lines = [reg];
-                plans[reg].forEach(it => lines.push(it.line));
-                result[reg] = lines.join('\n');
-            }
-            return {plans: result};
-        }
-
-        function sortPlans(plans) {
-            const keys = Object.keys(plans);
-            const priorityKeys = PRIORITY.filter(k => keys.indexOf(k) !== -1);
-            const remainingKeys = keys.filter(k => PRIORITY.indexOf(k) === -1 && k !== 'N/A').sort();
-            const naKeys = keys.filter(k => k === 'N/A');
-            const sorted = priorityKeys.concat(remainingKeys, naKeys);
-            const result = {};
-            sorted.forEach(k => result[k] = plans[k]);
-            return result;
-        }
-
-        function diffPlans(oldPlans, newPlans) {
-            const changes = {};
-            const allRegs = new Set(Object.keys(oldPlans || {}).concat(Object.keys(newPlans || {})));
-            allRegs.forEach(reg => {
-                const oldLines = new Set(((oldPlans && oldPlans[reg]) || '').split('\n'));
-                const newLines = new Set(((newPlans && newPlans[reg]) || '').split('\n'));
-                oldLines.delete(reg);
-                newLines.delete(reg);
-                newLines.forEach(line => {
-                    if (!oldLines.has(line)) {
-                        changes[reg + '\u0001' + line] = 'added';
-                    }
-                });
-            });
-            return changes;
-        }
-
-        // ======================= 渲染 =======================
-        function updateToggleBtn(hiddenCount) {
-            const btn = document.getElementById('toggleDomesticBtn');
-            const info = document.getElementById('domesticInfo');
-            if (!btn) return;
-            if (showAllPlans) {
-                btn.textContent = '🔒 隐藏纯内地计划';
-                info.textContent = '';
-            } else {
-                btn.textContent = '👁️ 显示全部计划（含纯内地）';
-                info.textContent = hiddenCount > 0
-                    ? '（已隐藏 ' + hiddenCount + ' 条纯内地航段）'
-                    : '（当前无纯内地航段）';
-            }
-        }
-
-        function renderPlans(plans, changes, isRestored) {
-            // 记录当前数据，供按钮切换时重绘
-            lastPlans = plans;
-            lastChanges = changes;
-            lastIsRestored = isRestored;
-
-            const container = document.getElementById('plans');
-            container.innerHTML = '';
-            let fullText = '';
-            let hiddenCount = 0;
-            let visibleRegCount = 0;
-
-            for (const reg in plans) {
-                const text = plans[reg];
-                const lines = text.split('\n');
-                let routes = lines.filter(l => l !== reg);
-
-                // 纯内地过滤（仅渲染层，原始数据不变）
-                if (!showAllPlans) {
-                    const before = routes.length;
-                    routes = routes.filter(line => !isDomesticLine(line));
-                    hiddenCount += before - routes.length;
-                }
-
-                // 该飞机所有航段都被过滤掉，则整块隐藏
-                if (routes.length === 0) continue;
-                visibleRegCount++;
-
-                const hasChanges = !isRestored && routes.some(line => changes[reg + '\u0001' + line]);
-
-                const block = document.createElement('div');
-                block.className = 'reg-block';
-
-                const titleDiv = document.createElement('div');
-                titleDiv.className = 'reg-title';
-                titleDiv.innerHTML = '✈️ ' + escapeHtml(reg) +
-                    (hasChanges ? '<span class="new-flag">🔴 有新增或变更</span>' : '');
-                block.appendChild(titleDiv);
-
-                const segList = document.createElement('div');
-                segList.className = 'seg-list';
-                routes.forEach(line => {
-                    const lineDiv = document.createElement('div');
-                    lineDiv.className = 'seg-line';
-                    lineDiv.textContent = line;
-                    segList.appendChild(lineDiv);
-                });
-                block.appendChild(segList);
-
-                const copyBtn = document.createElement('button');
-                copyBtn.textContent = '📋 复制该飞机';
-                copyBtn.onclick = () => {
-                    const copyText = reg + '\n' + routes.join('\n');
-                    navigator.clipboard.writeText(copyText).then(() => {
-                        copyBtn.textContent = '✅ 已复制';
-                        setTimeout(() => { copyBtn.textContent = '📋 复制该飞机'; }, 1500);
-                    }).catch(() => {
-                        fallbackCopy(copyText);
-                        copyBtn.textContent = '✅ 已复制';
-                        setTimeout(() => { copyBtn.textContent = '📋 复制该飞机'; }, 1500);
-                    });
-                };
-                block.appendChild(copyBtn);
-
-                container.appendChild(block);
-
-                fullText += reg + '\n' + routes.join('\n') + '\n\n';
-            }
-
-            if (visibleRegCount === 0 && !showAllPlans) {
-                container.innerHTML =
-                    '<div class="info">📭 所有计划均为纯内地航段，已全部隐藏。点击上方按钮可查看全部。</div>';
-            }
-
-            document.getElementById('fullTextBox').textContent = fullText.trim();
-            updateToggleBtn(hiddenCount);
-        }
-
-        function renderHistory(history) {
-            const container = document.getElementById('historyList');
-            if (!history.records || history.records.length === 0) {
-                container.innerHTML = '<div class="info">暂无历史记录</div>';
-                return;
-            }
-            let html = '<ol>';
-            for (const rec of history.records) {
-                html += '<li>' + escapeHtml(rec.timestamp) + ' - ' + escapeHtml(rec.filename) + '</li>';
-            }
-            html += '</ol>';
-            container.innerHTML = html;
-        }
-
-        function fallbackCopy(text) {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            try { document.execCommand('copy'); } catch (e) {}
-            document.body.removeChild(ta);
-        }
-
-        // ======================= 主流程 =======================
-        function handleFile(file) {
-            const status = document.getElementById('status');
-            status.innerHTML = '<div class="info">⏳ 正在读取文件...</div>';
-
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                try {
-                    const data = new Uint8Array(ev.target.result);
-                    const wb = XLSX.read(data, { type: 'array', cellDates: true });
-                    const ws = wb.Sheets[wb.SheetNames[0]];
-                    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
-
-                    const result = processRows(rows);
-                    if (result.error) {
-                        status.innerHTML = '<div class="error">❌ ' + escapeHtml(result.error) + '</div>';
-                        return;
-                    }
-
-                    const newPlans = result.plans;
-                    const sortedNewPlans = sortPlans(newPlans);
-
-                    const history = loadHistory();
-                    let oldPlans = {};
-                    if (history.records.length > 0) {
-                        oldPlans = history.records[history.records.length - 1].data || {};
-                    }
-
-                    const changes = diffPlans(oldPlans, newPlans);
-
-                    const now = new Date();
-                    const timestamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
-                                      ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
-
-                    history.records.push({
-                        timestamp: timestamp,
-                        filename: file.name,
-                        data: newPlans
-                    });
-                    if (history.records.length > 20) {
-                        history.records = history.records.slice(-20);
-                    }
-                    saveHistory(history);
-
-                    saveJSON(LAST_PLANS_KEY, sortedNewPlans);
-                    saveJSON(LAST_FILE_KEY, {name: file.name, timestamp: timestamp});
-
-                    document.getElementById('result').style.display = 'block';
-                    status.innerHTML = '<div class="success">✅ 文件读取成功：' +
-                        escapeHtml(file.name) + '（' + timestamp + '，历史累计 ' + history.records.length + ' 条）</div>';
-                    renderPlans(sortedNewPlans, changes, false);
-                    renderHistory(history);
-                } catch (err) {
-                    status.innerHTML = '<div class="error">❌ 处理失败：' + escapeHtml(err.message) + '</div>';
-                    console.error(err);
-                }
-            };
-            reader.readAsArrayBuffer(file);
-        }
-
-        window.addEventListener('DOMContentLoaded', () => {
-            // 绑定纯内地切换按钮
-            document.getElementById('toggleDomesticBtn').addEventListener('click', () => {
-                showAllPlans = !showAllPlans;
-                if (lastPlans) {
-                    renderPlans(lastPlans, lastChanges, lastIsRestored);
-                }
-            });
-
-            const lastPlansCached = loadJSON(LAST_PLANS_KEY);
-            const lastFile = loadJSON(LAST_FILE_KEY);
-            const history = loadHistory();
-
-            if (lastPlansCached && Object.keys(lastPlansCached).length > 0) {
-                document.getElementById('result').style.display = 'block';
-                const status = document.getElementById('status');
-                const info = lastFile
-                    ? '（上次加载：' + escapeHtml(lastFile.name) + '，' + escapeHtml(lastFile.timestamp) + '）'
-                    : '';
-                status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
-                renderPlans(lastPlansCached, {}, true);
-                renderHistory(history);
-            } else {
-                // 无数据时也要初始化按钮文案
-                updateToggleBtn(0);
-            }
-        });
-
-        document.getElementById('fileInput').addEventListener('change', (e) => {
-            const f = e.target.files[0];
-            if (f) handleFile(f);
-        });
-
-        document.getElementById('clearHistoryBtn').addEventListener('click', () => {
-            if (!confirm('确定清除所有历史记录吗？')) return;
-            saveHistory({records: []});
-            try {
-                localStorage.removeItem(LAST_PLANS_KEY);
-                localStorage.removeItem(LAST_FILE_KEY);
-            } catch (e) {}
-            location.reload();
-        });
-    </script>
-</body>
-</html>
-"""
-    components.html(F_HTML, height=1000, scrolling=True)
 
 
 
@@ -3424,7 +2887,7 @@ def run_feature_g():
 
 
 # ==============================
-# 功能 H：检查单/脚本生成器（HTML/JS 沙箱版 + localStorage 持久化）
+# 功能 H：检查单/脚本生成器 + 世界时行程（合并版）
 # ==============================
 def run_feature_chk():
     CHK_HTML = r"""
@@ -3432,17 +2895,19 @@ def run_feature_chk():
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>检查单 & 填写脚本生成器</title>
+    <title>检查单 & 世界时行程</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
     <style>
         body { font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; margin: 12px; color:#333; font-size:16px; }
         h3 { margin: 18px 0 8px 0; font-size: 19px; }
         input[type=file] { padding: 6px; font-size: 15px; }
-        button { padding: 10px 18px; font-size: 16px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; }
+        button { padding: 10px 18px; font-size: 16px; border-radius: 6px; border: 1px solid #ddd; background:#fff; cursor: pointer; margin-right: 6px; transition: all 0.2s; }
+        button:hover { background:#f5f5f5; }
         button.primary { background:#ff4b4b; color:#fff; border-color:#ff4b4b; font-weight: bold; }
         button.primary:hover { background:#e63939; }
-        button:hover { background:#f5f5f5; }
-        button.primary:hover { background:#e63939; }
+        button.active { background:#ff9800; color:#fff; border-color:#ff9800; font-weight: bold; }
+        button.active:hover { background:#f57c00; }
+        
         .code-block { background:#f5f5f5; padding:12px; border-radius:4px; font-family: Consolas, "Courier New", monospace; font-size:16px; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y:auto; border:1px solid #e0e0e0; }
         .status { color:#555; font-size:15px; margin-left:8px; }
         .error { color:#d32f2f; background:#ffebee; padding:8px; border-radius:4px; margin:6px 0; font-size:15px; }
@@ -3452,7 +2917,13 @@ def run_feature_chk():
         summary { cursor: pointer; font-weight: bold; padding: 6px 0; font-size: 18px; }
         .pp-aircraft { font-weight: bold; font-size: 17px; margin: 10px 0 6px 0; }
         table { border-collapse: collapse; }
-        .toolbar { margin: 10px 0 14px 0; }
+        .toolbar { margin: 10px 0 14px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+        
+        /* 世界时样式 */
+        .wt-block { margin-bottom: 20px; }
+        .wt-title { font-weight: bold; font-size: 19px; margin-bottom: 8px; }
+        .wt-list { background:#f7f7f7; border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; font-family: Consolas, "Courier New", monospace; font-size: 16px; line-height: 1.9; color:#222; }
+        .wt-line { padding: 3px 0; }
     </style>
 </head>
 <body>
@@ -3463,20 +2934,34 @@ def run_feature_chk():
         <div class="toolbar">
             <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
             <button id="toggleAllBtn">👁️ 显示所有计划</button>
+            <button id="switchViewBtn" style="margin-left: 10px;">🌐 世界时行程</button>
             <span class="status" id="copyStatus"></span>
         </div>
 
-        <h3>📦 PRELIM / PACKAGE</h3>
-        <div id="prelimPackage"></div>
+        <!-- 检查单视图 -->
+        <div id="checklistView">
+            <h3>📦 PRELIM / PACKAGE</h3>
+            <div id="prelimPackage"></div>
 
-        <h3>📜 JavaScript 填充脚本</h3>
-        <button id="copyJsBtn">📋 复制脚本</button>
-        <span class="status" id="copyJsStatus"></span>
-        <div class="code-block" id="jsScript"></div>
+            <h3>📜 JavaScript 填充脚本</h3>
+            <div style="margin-bottom: 8px;">
+                <button id="copyJsBtn">📋 复制脚本</button>
+                <span class="status" id="copyJsStatus"></span>
+            </div>
+            <div class="code-block" id="jsScript"></div>
+        </div>
+
+        <!-- 世界时视图 -->
+        <div id="worldtimeView" style="display:none;">
+            <div style="margin-bottom: 12px;">
+                <button id="toggleDomesticBtn" class="primary">👁️ 显示全部计划（含纯内地）</button>
+            </div>
+            <div id="worldtimeList"></div>
+        </div>
     </div>
 
     <script>
-        const CHK_MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+        const MONTHS = ['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
         const CHK_PREFERRED = ["B3926", "B652R", "B8105", "B8160", "B8262", "B8292", "B8309",
             "N2QE", "N328LM", "N550DR", "N577QT", "N7777U", "N777ZH",
             "N88AY", "T7178HT", "T7CJK", "VPCSZ", "VPCVA",
@@ -3485,37 +2970,16 @@ def run_feature_chk():
         CHK_PREFERRED.forEach((ac, i) => chkPriority[ac] = i);
         const chkDefaultPri = CHK_PREFERRED.length;
 
-        const CHK_CACHE_KEY = 'chk_last_result_v1';
-
+        // 状态变量
         let currentChkRows = [];
         let currentChkFlights = [];
         let currentChkRawItems = [];
+        let currentWorldTimeFlights = [];
         let currentJsScript = '';
-        let showAllPlans = false; // 是否显示全部计划的开关
-
-        // ============ localStorage 封装 ============
-        function saveCache(fileName) {
-            try {
-                const now = new Date();
-                const timestamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
-                                  ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
-                const payload = {
-                    timestamp: timestamp,
-                    filename: fileName,
-                    chkRows: currentChkRows,
-                    chkFlights: currentChkFlights,
-                    chkRawItems: currentChkRawItems
-                };
-                localStorage.setItem(CHK_CACHE_KEY, JSON.stringify(payload));
-                return timestamp;
-            } catch (e) { console.error('保存缓存失败：', e); return null; }
-        }
-        function loadCache() {
-            try {
-                const raw = localStorage.getItem(CHK_CACHE_KEY);
-                return raw ? JSON.parse(raw) : null;
-            } catch (e) { return null; }
-        }
+        
+        let showAllPlans = false; // 检查单日期展开状态
+        let showDomestic = false; // 世界时纯内地展示状态（默认 false = 隐藏纯内地）
+        let currentView = 'checklist'; // 'checklist' 或 'worldtime'
 
         // ============ 工具函数 ============
         function pad2(n) { return String(n).padStart(2, '0'); }
@@ -3561,13 +3025,60 @@ def run_feature_chk():
                 bj = d;
             }
             const utc = new Date(bj.getTime() - 8 * 3600 * 1000);
-            return pad2(utc.getDate()) + CHK_MONTHS[utc.getMonth()];
+            return pad2(utc.getDate()) + MONTHS[utc.getMonth()];
         }
 
         function getBJdate(dateVal) {
             const d = parseDate(dateVal);
             if (!d) return null;
-            return pad2(d.getDate()) + CHK_MONTHS[d.getMonth()];
+            return pad2(d.getDate()) + MONTHS[d.getMonth()];
+        }
+
+        function toUTCLabel(dateVal, timeStr) {
+            const d = parseDate(dateVal);
+            if (!d || !timeStr) return null;
+            const parts = timeStr.split(':');
+            const h = parseInt(parts[0]);
+            const m = parseInt(parts[1]);
+
+            let total = h * 60 + m - 8 * 60;
+            let dayOff = 0;
+            while (total < 0) { total += 24 * 60; dayOff--; }
+            while (total >= 24 * 60) { total -= 24 * 60; dayOff++; }
+            const uh = Math.floor(total / 60);
+            const um = total % 60;
+
+            const dd = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            dd.setDate(dd.getDate() + dayOff);
+
+            return {
+                day: dd.getDate(),
+                month: dd.getMonth() + 1,
+                hours: uh,
+                minutes: um,
+                sortKey: dd.getFullYear() * 100000000 + (dd.getMonth() + 1) * 1000000 + dd.getDate() * 10000 + uh * 100 + um
+            };
+        }
+
+        function formatUTCLabel(u) {
+            if (!u) return '';
+            return pad2(u.day) + MONTHS[u.month - 1] + ' ' + pad2(u.hours) + pad2(u.minutes) + 'Z';
+        }
+
+        // 纯内地机场判断
+        function isMainlandAirport(icao) {
+            if (!icao) return false;
+            const s = String(icao).trim().toUpperCase();
+            if (s.length !== 4) return false;
+            if (s.charAt(0) !== 'Z') return false;
+            if (s.indexOf('ZM') === 0) return false;
+            return true;
+        }
+
+        function isDomesticLine(line) {
+            const m = line.match(/ETD\s+(\S+)\s+.*?ETA\s+(\S+)/);
+            if (!m) return false;
+            return isMainlandAirport(m[1]) && isMainlandAirport(m[2]);
         }
 
         function escapeHtml(s) {
@@ -3640,6 +3151,7 @@ def run_feature_chk():
 
             const chkFlights = [];
             const chkRawItems = [];
+            const worldTimePlans = {}; // 按机号分组的世界时数据
 
             for (let i = headerIdx + 1; i < rows.length; i++) {
                 const r = rows[i];
@@ -3660,60 +3172,76 @@ def run_feature_chk():
                 const dtObj = parseDate(get(colDate));
                 const timestamp = dtObj ? dtObj.getTime() : 0;
 
+                const depDate = get(colDate);
+                const depTime = get(colTime);
+                const arrDate = get(colArrDate);
+                const arrTime = get(colArrTime);
+                const purpose = get(colPurpose);
+
+                const depTimeStr = parseTime(depTime);
+                const arrTimeStr = parseTime(arrTime);
+
+                // 1. 收集检查单用数据 (需要四字码)
                 if (orgStr.length === 4 && /^[A-Z]+$/.test(orgStr) &&
                     dstStr.length === 4 && /^[A-Z]+$/.test(dstStr)) {
                     chkFlights.push({
                         aircraft: acStr,
                         origin: orgStr,
                         dest: dstStr,
-                        date: getUTCdate(get(colDate), get(colTime)),
-                        date_bj: getBJdate(get(colDate)),
-                        timestamp: timestamp // 绝对时间戳，用于排序和判断今天/明天
+                        date: getUTCdate(depDate, depTime),
+                        date_bj: getBJdate(depDate),
+                        timestamp: timestamp
                     });
                 }
 
-                const depTime = get(colTime);
-                const arrTime = get(colArrTime);
-                if (depTime === '' || arrTime === '') continue;
-                const depTimeStr = parseTime(depTime);
-                const arrTimeStr = parseTime(arrTime);
-                if (!depTimeStr || !arrTimeStr) continue;
+                // 2. 收集提取文本用数据 (需要时间)
+                if (depTimeStr && arrTimeStr) {
+                    const depCityStr = get(colDepCity) ? String(get(colDepCity)).trim() : '';
+                    const arrCityStr = get(colArrCity) ? String(get(colArrCity)).trim() : '';
+                    const purposeStr = purpose ? String(purpose).trim() : '';
 
-                const depDate = get(colDate);
-                const arrDate = get(colArrDate);
-                const depCity = get(colDepCity);
-                const arrCity = get(colArrCity);
-                const purpose = get(colPurpose);
+                    const depDtObj = parseDate(depDate);
+                    const arrDtObj = parseDate(arrDate);
+                    let dayDiff = 0;
+                    if (depDtObj && arrDtObj) {
+                        dayDiff = Math.round((arrDtObj.getTime() - depDtObj.getTime()) / 86400000);
+                    }
+                    const plus = dayDiff > 0 ? ' +' + dayDiff : '';
 
-                const depCityStr = depCity ? String(depCity).trim() : '';
-                const arrCityStr = arrCity ? String(arrCity).trim() : '';
-                const purposeStr = purpose ? String(purpose).trim() : '';
+                    const line1 = acStr + ' ' + depTimeStr + ' - ' + arrTimeStr + plus;
+                    const line2 = depCityStr + ' - ' + arrCityStr;
+                    const content = purposeStr.indexOf('调机') !== -1 ? 'F\n' + line1 + '\n' + line2 : line1 + '\n' + line2;
 
-                const depDt = parseDate(depDate);
-                const arrDt = parseDate(arrDate);
-                let dayDiff = 0;
-                if (depDt && arrDt) {
-                    dayDiff = Math.round((arrDt.getTime() - depDt.getTime()) / 86400000);
+                    chkRawItems.push({
+                        aircraft: acStr,
+                        depDt: depDtObj,
+                        depTimeStr: depTimeStr,
+                        content: content,
+                    });
                 }
-                const plus = dayDiff > 0 ? ' +' + dayDiff : '';
 
-                const line1 = acStr + ' ' + depTimeStr + ' - ' + arrTimeStr + plus;
-                const line2 = depCityStr + ' - ' + arrCityStr;
-                const content = purposeStr.indexOf('调机') !== -1 ? 'F\n' + line1 + '\n' + line2 : line1 + '\n' + line2;
-
-                chkRawItems.push({
-                    aircraft: acStr,
-                    depDt: depDt,
-                    depTimeStr: depTimeStr,
-                    content: content,
-                });
+                // 3. 收集世界时数据 (需要完整日期时间、四字码)
+                const depUtc = toUTCLabel(depDate, depTimeStr);
+                const arrUtc = toUTCLabel(arrDate, arrTimeStr);
+                if (depUtc && arrUtc) {
+                    const use = String(purpose || '');
+                    const flightType = use.indexOf('调机') !== -1 ? 'FERRY' : 'PAX';
+                    
+                    const wtLine = 'ETD ' + orgStr + ' ' + formatUTCLabel(depUtc) +
+                                 ' // ETA ' + dstStr + ' ' + formatUTCLabel(arrUtc) +
+                                 '  ' + flightType;
+                    
+                    if (!worldTimePlans[acStr]) worldTimePlans[acStr] = [];
+                    worldTimePlans[acStr].push({ sortKey: depUtc.sortKey, line: wtLine });
+                }
             }
 
-            if (chkFlights.length === 0 && chkRawItems.length === 0) {
+            if (chkFlights.length === 0 && chkRawItems.length === 0 && Object.keys(worldTimePlans).length === 0) {
                 showError('❌ 未读取到有效航段数据');
                 return;
             }
 
+            // ---- 排序检查单数据 ----
             chkRawItems.sort((a, b) => {
                 const ta = a.depDt ? a.depDt.getTime() : Number.MAX_SAFE_INTEGER;
                 const tb = b.depDt ? b.depDt.getTime() : Number.MAX_SAFE_INTEGER;
@@ -3738,98 +3266,75 @@ def run_feature_chk():
                 first = false;
             }
 
+            // ---- 排序世界时数据 ----
+            const worldTimeFlights = [];
+            for (const ac in worldTimePlans) {
+                worldTimePlans[ac].sort((a, b) => a.sortKey - b.sortKey);
+                const lines = [ac];
+                worldTimePlans[ac].forEach(it => lines.push(it.line));
+                worldTimeFlights.push({ reg: ac, text: lines.join('\n') });
+            }
+            // 按机号优先级排序
+            worldTimeFlights.sort((a, b) => {
+                const pa = chkPriority[a.reg] !== undefined ? chkPriority[a.reg] : chkDefaultPri;
+                const pb = chkPriority[b.reg] !== undefined ? chkPriority[b.reg] : chkDefaultPri;
+                return pa - pb;
+            });
+
             currentChkRows = chkRows;
             currentChkFlights = chkFlights;
             currentChkRawItems = chkRawItems;
+            currentWorldTimeFlights = worldTimeFlights;
 
             renderAll();
-            const ts = saveCache(fileName);
 
+            const now = new Date();
+            const timestamp = now.getFullYear() + '-' + pad2(now.getMonth()+1) + '-' + pad2(now.getDate()) +
+                              ' ' + pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+            
             const status = document.getElementById('status');
             status.innerHTML = '<div class="success">✅ 文件读取成功：' + escapeHtml(fileName) +
-                '（' + escapeHtml(ts || '') + '，已自动缓存）</div>';
+                '（' + timestamp + '，已自动缓存）</div>';
         }
 
-        // ============ 渲染 ============
-        const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:16pt; border:1px solid #000000; padding:2px 6px;";
-
+        // ============ 渲染控制 ============
         function renderAll() {
             document.getElementById('result').style.display = 'block';
+            
+            // 渲染检查单视图
             renderPrelimPackage(currentChkFlights, showAllPlans);
             generateJsScript(currentChkFlights);
-            document.getElementById('copyBtn').onclick = copyChecklist;
-            document.getElementById('copyJsBtn').onclick = copyJsScript;
             
-            // 更新切换按钮文字
-            const btn = document.getElementById('toggleAllBtn');
-            if (btn) btn.textContent = showAllPlans ? '🔒 隐藏未来计划' : '👁️ 显示所有计划';
+            // 渲染世界时视图
+            renderWorldTime(currentWorldTimeFlights, showDomestic);
+            
+            updateUIState();
         }
 
-        async function copyChecklist() {
-            const status = document.getElementById('copyStatus');
-            let htmlTable = '<table style="border-collapse: collapse;">';
-            for (const row of currentChkRows) {
-                if (row.type === 'blank') {
-                    htmlTable += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
-                } else {
-                    const content = row.content.split('\n').map(escapeHtml).join('<br>');
-                    htmlTable += '<tr><td style="' + TD_STYLE + '">' + content + '</td></tr>';
-                }
+        function updateUIState() {
+            const btnSwitch = document.getElementById('switchViewBtn');
+            const viewChk = document.getElementById('checklistView');
+            const viewWt = document.getElementById('worldtimeView');
+            
+            if (currentView === 'checklist') {
+                btnSwitch.textContent = '🌐 世界时行程';
+                btnSwitch.className = '';
+                viewChk.style.display = 'block';
+                viewWt.style.display = 'none';
+            } else {
+                btnSwitch.textContent = '🌐 当前：世界时行程';
+                btnSwitch.className = 'active';
+                viewChk.style.display = 'none';
+                viewWt.style.display = 'block';
             }
-            htmlTable += '</table>';
-
-            const plain = currentChkRows.map(r => r.type === 'blank' ? '' : r.content).join('\n\n');
-
-            try {
-                await navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/html': new Blob([htmlTable], { type: 'text/html' }),
-                        'text/plain': new Blob([plain], { type: 'text/plain' })
-                    })
-                ]);
-                status.textContent = '✅ 已复制（可粘贴到 Word，保留 Times New Roman 16pt）';
-                status.style.color = '#2e7d32';
-            } catch (e) {
-                try {
-                    const div = document.createElement('div');
-                    div.innerHTML = htmlTable;
-                    div.style.position = 'fixed';
-                    div.style.left = '-9999px';
-                    document.body.appendChild(div);
-                    const range = document.createRange();
-                    range.selectNodeContents(div);
-                    const sel = window.getSelection();
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                    document.execCommand('copy');
-                    sel.removeAllRanges();
-                    document.body.removeChild(div);
-                    status.textContent = '✅ 已复制（降级模式）';
-                    status.style.color = '#2e7d32';
-                } catch (e2) {
-                    status.textContent = '❌ 复制失败：' + e.message;
-                    status.style.color = '#d32f2f';
-                }
+            
+            const btnDomestic = document.getElementById('toggleDomesticBtn');
+            if (btnDomestic) {
+                btnDomestic.textContent = showDomestic ? '🔒 隐藏纯内地计划' : '👁️ 显示全部计划（含纯内地）';
             }
         }
 
-        function copyJsScript() {
-            const status = document.getElementById('copyJsStatus');
-            navigator.clipboard.writeText(currentJsScript).then(() => {
-                status.textContent = '✅ 已复制';
-                status.style.color = '#2e7d32';
-            }).catch(e => {
-                const ta = document.createElement('textarea');
-                ta.value = currentJsScript;
-                document.body.appendChild(ta);
-                ta.select();
-                try { document.execCommand('copy'); status.textContent = '✅ 已复制'; status.style.color = '#2e7d32'; }
-                catch (e2) { status.textContent = '❌ 复制失败'; status.style.color = '#d32f2f'; }
-                document.body.removeChild(ta);
-            });
-        }
-
-        // ============ 核心渲染逻辑：处理显示过滤 ============
+        // ============ 检查单渲染 ============
         function renderPrelimPackage(flights, showAll) {
             const container = document.getElementById('prelimPackage');
             if (!flights || flights.length === 0) {
@@ -3837,59 +3342,42 @@ def run_feature_chk():
                 return;
             }
             
-            // 使用完整时间戳进行分组和排序，彻底解决跨年排序 bug
             const dateGroups = {};
             for (const f of flights) {
                 if (!f.date_bj) continue;
                 const ts = f.timestamp || 0;
                 if (!dateGroups[ts]) {
-                    dateGroups[ts] = {
-                        displayDate: f.date_bj,
-                        aircrafts: {}
-                    };
+                    dateGroups[ts] = { displayDate: f.date_bj, aircrafts: {} };
                 }
                 const ac = f.aircraft;
                 if (!dateGroups[ts].aircrafts[ac]) dateGroups[ts].aircrafts[ac] = [];
                 dateGroups[ts].aircrafts[ac].push(f);
             }
 
-            // 获取今天的零点时间戳（用于判断相对关系）
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const tomorrow = new Date(today);
-            tomorrow.setDate(today.getDate() + 1);
-            const dayAfter = new Date(today);
-            dayAfter.setDate(today.getDate() + 2);
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+            const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2);
 
             const todayTime = today.getTime();
             const tomorrowTime = tomorrow.getTime();
             const dayAfterTime = dayAfter.getTime();
 
-            // 按时间戳（完整的年月日）进行升序排序
             const sortedTimestamps = Object.keys(dateGroups).map(Number).sort((a, b) => a - b);
-
             let html = '';
+
             for (const ts of sortedTimestamps) {
-                // 如果不是“显示所有”，且时间超过了后天，默认隐藏
-                if (!showAll && ts > dayAfterTime) {
-                    continue;
-                }
+                if (!showAll && ts > dayAfterTime) continue;
 
                 let showPrelim = true;
                 let showPackage = true;
 
-                // 根据用户需求定制显示逻辑
                 if (ts === todayTime) {
-                    showPrelim = false; // 今天：只显示 PACKAGE
-                    showPackage = true;
+                    showPrelim = false;
                 } else if (ts === tomorrowTime) {
-                    showPrelim = true;  // 明天：都显示
-                    showPackage = true;
+                    showPrelim = true; showPackage = true;
                 } else if (ts >= dayAfterTime) {
-                    showPrelim = true;  // 后天及以后：只显示 PRELIM
-                    showPackage = false;
+                    showPrelim = true; showPackage = false;
                 } 
-                // 过去日期的逻辑默认走 showPrelim = true, showPackage = true
 
                 const group = dateGroups[ts];
                 let groupHtml = '';
@@ -3928,9 +3416,136 @@ def run_feature_chk():
             container.innerHTML = html;
         }
 
+        // ============ 世界时渲染 ============
+        function renderWorldTime(flights, showAllDomestic) {
+            const container = document.getElementById('worldtimeList');
+            if (!flights || flights.length === 0) {
+                container.innerHTML = '<div class="info">无世界时行程数据</div>';
+                return;
+            }
+
+            let html = '';
+            let hasValidData = false;
+
+            for (const item of flights) {
+                const lines = item.text.split('\n');
+                const reg = lines[0];
+                let routes = lines.slice(1);
+
+                if (!showAllDomestic) {
+                    routes = routes.filter(line => !isDomesticLine(line));
+                }
+
+                if (routes.length === 0) continue;
+                hasValidData = true;
+
+                html += '<div class="wt-block">';
+                html += '<div class="wt-title">✈️ ' + escapeHtml(reg) + '</div>';
+                html += '<div class="wt-list">';
+                routes.forEach(line => {
+                    html += '<div class="wt-line">' + escapeHtml(line) + '</div>';
+                });
+                html += '</div>';
+                
+                // 添加单机复制按钮
+                const copyText = reg + '\n' + routes.join('\n');
+                const b64Text = btoa(unescape(encodeURIComponent(copyText)));
+                html += '<button style="margin-top:6px;" onclick="copyTextFromB64(\''+b64Text+'\', this)">📋 复制该飞机</button>';
+                
+                html += '</div>';
+            }
+
+            if (!hasValidData) {
+                container.innerHTML = '<div class="info">📭 所有计划均为纯内地航段，已全部隐藏。点击上方按钮可查看全部。</div>';
+            } else {
+                container.innerHTML = html;
+            }
+        }
+
+        function copyTextFromB64(b64, btn) {
+            const text = decodeURIComponent(escape(atob(b64)));
+            navigator.clipboard.writeText(text).then(() => {
+                const original = btn.textContent;
+                btn.textContent = '✅ 已复制';
+                setTimeout(() => btn.textContent = original, 1500);
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (e) {}
+                document.body.removeChild(ta);
+                const original = btn.textContent;
+                btn.textContent = '✅ 已复制';
+                setTimeout(() => btn.textContent = original, 1500);
+            });
+        }
+
+        // ============ 其他辅助逻辑 ============
+        async function copyChecklist() {
+            const status = document.getElementById('copyStatus');
+            const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:16pt; border:1px solid #000000; padding:2px 6px;";
+            
+            let htmlTable = '<table style="border-collapse: collapse;">';
+            for (const row of currentChkRows) {
+                if (row.type === 'blank') {
+                    htmlTable += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
+                } else {
+                    const content = row.content.split('\n').map(escapeHtml).join('<br>');
+                    htmlTable += '<tr><td style="' + TD_STYLE + '">' + content + '</td></tr>';
+                }
+            }
+            htmlTable += '</table>';
+
+            const plain = currentChkRows.map(r => r.type === 'blank' ? '' : r.content).join('\n\n');
+
+            try {
+                await navigator.clipboard.write([
+                    new ClipboardItem({
+                        'text/html': new Blob([htmlTable], { type: 'text/html' }),
+                        'text/plain': new Blob([plain], { type: 'text/plain' })
+                    })
+                ]);
+                status.textContent = '✅ 已复制（保留格式）';
+                status.style.color = '#2e7d32';
+            } catch (e) {
+                const div = document.createElement('div');
+                div.innerHTML = htmlTable;
+                div.style.position = 'fixed';
+                div.style.left = '-9999px';
+                document.body.appendChild(div);
+                const range = document.createRange();
+                range.selectNodeContents(div);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+                document.execCommand('copy');
+                sel.removeAllRanges();
+                document.body.removeChild(div);
+                status.textContent = '✅ 已复制（降级模式）';
+                status.style.color = '#2e7d32';
+            }
+        }
+
+        function copyJsScript() {
+            const status = document.getElementById('copyJsStatus');
+            navigator.clipboard.writeText(currentJsScript).then(() => {
+                status.textContent = '✅ 已复制';
+                status.style.color = '#2e7d32';
+            }).catch(e => {
+                const ta = document.createElement('textarea');
+                ta.value = currentJsScript;
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); status.textContent = '✅ 已复制'; status.style.color = '#2e7d32'; }
+                catch (e2) { status.textContent = '❌ 复制失败'; status.style.color = '#d32f2f'; }
+                document.body.removeChild(ta);
+            });
+        }
+
         function generateJsScript(flights) {
             if (!flights || flights.length === 0) {
-                currentJsScript = '// 无 PRELIM/PACKAGE 数据，未生成填充脚本';
+                currentJsScript = '// 无数据，未生成填充脚本';
                 document.getElementById('jsScript').textContent = currentJsScript;
                 return;
             }
@@ -3961,8 +3576,7 @@ def run_feature_chk():
 '',
 '    var originInput = getElementByXpath("/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[1]/td[1]/input[1]");',
 '    if (!originInput) { console.error("未找到起飞机场输入框"); return false; }',
-'    originInput.focus();',
-'    originInput.value = data.origin;',
+'    originInput.focus(); originInput.value = data.origin;',
 '    originInput.dispatchEvent(new Event("input", { bubbles: true }));',
 '    originInput.dispatchEvent(new Event("change", { bubbles: true }));',
 '    originInput.dispatchEvent(new Event("blur", { bubbles: true }));',
@@ -3970,8 +3584,7 @@ def run_feature_chk():
 '',
 '    var destInput = getElementByXpath("/html/body/div[4]/form/table/tbody/tr/td[1]/div[2]/div[1]/table/tbody/tr[3]/td[2]/table/tbody/tr[4]/td[1]/input[1]");',
 '    if (!destInput) { console.error("未找到目的地机场输入框"); return false; }',
-'    destInput.focus();',
-'    destInput.value = data.dest;',
+'    destInput.focus(); destInput.value = data.dest;',
 '    destInput.dispatchEvent(new Event("input", { bubbles: true }));',
 '    destInput.dispatchEvent(new Event("change", { bubbles: true }));',
 '    destInput.dispatchEvent(new Event("blur", { bubbles: true }));',
@@ -4001,35 +3614,33 @@ def run_feature_chk():
             status.innerHTML = '<div class="error">' + escapeHtml(msg) + '</div>';
         }
 
-        // ============ 页面加载：自动恢复上次结果 ============
+        // ============ 事件绑定 ============
         window.addEventListener('DOMContentLoaded', () => {
-            // 绑定“显示所有计划”按钮
+            document.getElementById('copyBtn').addEventListener('click', copyChecklist);
+            document.getElementById('copyJsBtn').addEventListener('click', copyJsScript);
+            
             document.getElementById('toggleAllBtn').addEventListener('click', function() {
                 showAllPlans = !showAllPlans;
-                renderAll();
+                this.textContent = showAllPlans ? '🔒 隐藏未来计划' : '👁️ 显示所有计划';
+                renderPrelimPackage(currentChkFlights, showAllPlans);
             });
 
-            const cache = loadCache();
-            if (cache && cache.chkRows && cache.chkRows.length > 0) {
-                currentChkRows = cache.chkRows || [];
-                currentChkFlights = cache.chkFlights || [];
-                currentChkRawItems = cache.chkRawItems || [];
+            document.getElementById('switchViewBtn').addEventListener('click', function() {
+                currentView = currentView === 'checklist' ? 'worldtime' : 'checklist';
+                updateUIState();
+            });
 
-                renderAll();
-
-                const status = document.getElementById('status');
-                const info = cache.filename
-                    ? '（上次加载：' + escapeHtml(cache.filename) + '，' + escapeHtml(cache.timestamp) + '）'
-                    : '';
-                status.innerHTML = '<div class="info">💾 已恢复上次解析结果 ' + info + '</div>';
-            }
+            document.getElementById('toggleDomesticBtn').addEventListener('click', function() {
+                showDomestic = !showDomestic;
+                renderWorldTime(currentWorldTimeFlights, showDomestic);
+                updateUIState();
+            });
         });
     </script>
 </body>
 </html>
 """
     components.html(CHK_HTML, height=1600, scrolling=True)
-
 
 
 
@@ -4600,7 +4211,7 @@ W272,"Andrew Nigel, KING",Andrew.king@aero.bombardier.com`;
 # ==============================
 st.set_page_config(page_title="监控+计划", layout="wide")
 
-# ===== Tab 栏固定顶部 + 前4个一行、后5个一行，左对齐 =====
+# ===== Tab 栏固定顶部 + 前3个一行、后5个一行，左对齐 =====
 st.markdown("""
 <style>
 /* Tab 栏固定在顶部 */
@@ -4627,8 +4238,8 @@ div[data-testid="stTabs"] div[role="tablist"] > * {
     flex: 0 0 auto !important;
     margin-bottom: 4px !important;
 }
-/* 第4个 Tab 之后强制换行 */
-div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(4) {
+/* 第3个 Tab 之后强制换行（因为去掉了世界时，只剩前3个） */
+div[data-testid="stTabs"] div[role="tablist"] > *:nth-child(3) {
     margin-right: 100% !important;
 }
 </style>
@@ -4639,7 +4250,6 @@ st.title("监控+计划")
 tabs = st.tabs([
     "✉️ WX邮件生成",
     "📝 检查单&填写脚本",
-    "🌐 世界时行程",
     "✈️ 航路处理",
     "📋 每日飞行数据-10：00发",
     "📄 每日通航运行情况跟踪表-16：30发",
@@ -4653,18 +4263,16 @@ with tabs[0]:
 with tabs[1]:
     run_feature_chk()
 with tabs[2]:
-    run_feature_f()
-with tabs[3]:
     run_feature_g()
-with tabs[4]:
+with tabs[3]:
     run_feature_a()
-with tabs[5]:
+with tabs[4]:
     run_feature_b()
-with tabs[6]:
+with tabs[5]:
     run_feature_c()
-with tabs[7]:
+with tabs[6]:
     run_feature_d()
-with tabs[8]:
+with tabs[7]:
     run_feature_e()
 
-st.caption("💡 邮件生成每天多次用，检查单+脚本自动填表，世界时行程和航路处理常驻第3-4位；其余功能保持不变。")
+st.caption("💡 邮件生成每天多次用，检查单与世界时行程已合并（自动填表），航路处理常驻第3位；其余功能保持不变。")
