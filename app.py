@@ -3411,6 +3411,18 @@ def run_feature_g():
 """
     components.html(G_HTML, height=900, scrolling=True)
 
+
+
+
+
+
+
+
+
+
+
+
+
 # ==============================
 # 功能 H：检查单/脚本生成器（HTML/JS 沙箱版 + localStorage 持久化）
 # ==============================
@@ -3450,6 +3462,7 @@ def run_feature_chk():
     <div id="result" style="display:none;">
         <div class="toolbar">
             <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
+            <button id="toggleAllBtn">👁️ 显示所有计划</button>
             <span class="status" id="copyStatus"></span>
         </div>
 
@@ -3478,6 +3491,7 @@ def run_feature_chk():
         let currentChkFlights = [];
         let currentChkRawItems = [];
         let currentJsScript = '';
+        let showAllPlans = false; // 是否显示全部计划的开关
 
         // ============ localStorage 封装 ============
         function saveCache(fileName) {
@@ -3643,6 +3657,9 @@ def run_feature_chk():
                 const orgStr = String(origin).trim().toUpperCase();
                 const dstStr = String(dest).trim().toUpperCase();
 
+                const dtObj = parseDate(get(colDate));
+                const timestamp = dtObj ? dtObj.getTime() : 0;
+
                 if (orgStr.length === 4 && /^[A-Z]+$/.test(orgStr) &&
                     dstStr.length === 4 && /^[A-Z]+$/.test(dstStr)) {
                     chkFlights.push({
@@ -3651,6 +3668,7 @@ def run_feature_chk():
                         dest: dstStr,
                         date: getUTCdate(get(colDate), get(colTime)),
                         date_bj: getBJdate(get(colDate)),
+                        timestamp: timestamp // 新增：完整绝对时间戳，用于排序和判断今天/明天
                     });
                 }
 
@@ -3737,10 +3755,14 @@ def run_feature_chk():
 
         function renderAll() {
             document.getElementById('result').style.display = 'block';
-            renderPrelimPackage(currentChkFlights);
+            renderPrelimPackage(currentChkFlights, showAllPlans);
             generateJsScript(currentChkFlights);
             document.getElementById('copyBtn').onclick = copyChecklist;
             document.getElementById('copyJsBtn').onclick = copyJsScript;
+            
+            // 更新切换按钮文字
+            const btn = document.getElementById('toggleAllBtn');
+            if (btn) btn.textContent = showAllPlans ? '🔒 隐藏未来计划' : '👁️ 显示所有计划';
         }
 
         async function copyChecklist() {
@@ -3807,46 +3829,91 @@ def run_feature_chk():
             });
         }
 
-        function renderPrelimPackage(flights) {
+        // ============ 核心渲染逻辑：处理显示过滤 ============
+        function renderPrelimPackage(flights, showAll) {
             const container = document.getElementById('prelimPackage');
             if (!flights || flights.length === 0) {
                 container.innerHTML = '<div class="info">无 PRELIM/PACKAGE 数据</div>';
                 return;
             }
+            
+            // 使用完整时间戳进行分组和排序，彻底解决跨年排序 bug
             const dateGroups = {};
             for (const f of flights) {
                 if (!f.date_bj) continue;
-                const d = f.date_bj, ac = f.aircraft;
-                if (!dateGroups[d]) dateGroups[d] = {};
-                if (!dateGroups[d][ac]) dateGroups[d][ac] = [];
-                dateGroups[d][ac].push(f);
+                const ts = f.timestamp || 0;
+                if (!dateGroups[ts]) {
+                    dateGroups[ts] = {
+                        displayDate: f.date_bj,
+                        aircrafts: {}
+                    };
+                }
+                const ac = f.aircraft;
+                if (!dateGroups[ts].aircrafts[ac]) dateGroups[ts].aircrafts[ac] = [];
+                dateGroups[ts].aircrafts[ac].push(f);
             }
-            const monthsMap = {};
-            CHK_MONTHS.forEach((m, i) => monthsMap[m] = i);
-            function dateKey(d) {
-                if (!d || d.length < 5) return [99, 0];
-                const day = parseInt(d.substring(0, 2));
-                const month = monthsMap[d.substring(2)] || 0;
-                return [month, isNaN(day) ? 99 : day];
-            }
-            const sortedDates = Object.keys(dateGroups).sort((a, b) => {
-                const ka = dateKey(a), kb = dateKey(b);
-                return ka[0] !== kb[0] ? ka[0] - kb[0] : ka[1] - kb[1];
-            });
+
+            // 获取今天的零点时间戳（用于判断相对关系）
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(today.getDate() + 1);
+            const dayAfter = new Date(today);
+            dayAfter.setDate(today.getDate() + 2);
+
+            const todayTime = today.getTime();
+            const tomorrowTime = tomorrow.getTime();
+            const dayAfterTime = dayAfter.getTime();
+
+            // 按时间戳（完整的年月日）进行升序排序
+            const sortedTimestamps = Object.keys(dateGroups).map(Number).sort((a, b) => a - b);
+
             let html = '';
-            for (const dateBj of sortedDates) {
-                html += '<details open><summary>📅 ' + dateBj + '</summary>';
-                const acGroups = dateGroups[dateBj];
+            for (const ts of sortedTimestamps) {
+                // 如果不是“显示所有”，且时间超过了后天，默认隐藏
+                if (!showAll && ts > dayAfterTime) {
+                    continue;
+                }
+
+                let showPrelim = true;
+                let showPackage = true;
+
+                // 根据用户需求定制显示逻辑
+                if (ts === todayTime) {
+                    showPrelim = false; // 今天：只显示 PACKAGE
+                    showPackage = true;
+                } else if (ts === tomorrowTime || ts === dayAfterTime) {
+                    showPrelim = true;  // 明天/后天：都显示
+                    showPackage = true;
+                } else if (ts > dayAfterTime) {
+                    showPrelim = true;  // 未来（大后天及以后）：只显示 PRELIM
+                    showPackage = false;
+                } 
+                // 过去日期的逻辑默认走 showPrelim = true, showPackage = true
+
+                const group = dateGroups[ts];
+                html += '<details open><summary>📅 ' + group.displayDate + '</summary>';
+                
+                const acGroups = group.aircrafts;
                 const sortedAcs = Object.keys(acGroups).sort((a, b) => {
                     const pa = chkPriority[a] !== undefined ? chkPriority[a] : chkDefaultPri;
                     const pb = chkPriority[b] !== undefined ? chkPriority[b] : chkDefaultPri;
                     return pa - pb;
                 });
+
                 for (const ac of sortedAcs) {
                     const items = acGroups[ac];
-                    const prelims = items.map(f => 'PRELIM ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
-                    const packages = items.map(f => 'PACKAGE ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date);
-                    const block = prelims.join('\n') + '\n\n' + packages.join('\n');
+                    const prelims = showPrelim ? items.map(f => 'PRELIM ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date) : [];
+                    const packages = showPackage ? items.map(f => 'PACKAGE ' + f.aircraft + ' ' + f.origin + '-' + f.dest + ' ' + f.date) : [];
+                    
+                    let block = '';
+                    if (prelims.length > 0) block += prelims.join('\n');
+                    if (packages.length > 0) {
+                        if (block) block += '\n\n';
+                        block += packages.join('\n');
+                    }
+                    if (!block) continue;
+
                     html += '<div class="pp-aircraft">' + ac + '</div><div class="code-block">' + escapeHtml(block) + '</div>';
                 }
                 html += '</details>';
@@ -3929,6 +3996,12 @@ def run_feature_chk():
 
         // ============ 页面加载：自动恢复上次结果 ============
         window.addEventListener('DOMContentLoaded', () => {
+            // 绑定“显示所有计划”按钮
+            document.getElementById('toggleAllBtn').addEventListener('click', function() {
+                showAllPlans = !showAllPlans;
+                renderAll();
+            });
+
             const cache = loadCache();
             if (cache && cache.chkRows && cache.chkRows.length > 0) {
                 currentChkRows = cache.chkRows || [];
@@ -3949,6 +4022,22 @@ def run_feature_chk():
 </html>
 """
     components.html(CHK_HTML, height=1600, scrolling=True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # ==============================
 # 功能 I：WX AND NOTAM 邮件生成（HTML/JS 沙箱版 + 完整持久化）
