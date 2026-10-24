@@ -3668,7 +3668,7 @@ def run_feature_chk():
                         dest: dstStr,
                         date: getUTCdate(get(colDate), get(colTime)),
                         date_bj: getBJdate(get(colDate)),
-                        timestamp: timestamp // 新增：完整绝对时间戳，用于排序和判断今天/明天
+                        timestamp: timestamp // 绝对时间戳，用于排序和判断今天/明天
                     });
                 }
 
@@ -3882,17 +3882,18 @@ def run_feature_chk():
                 if (ts === todayTime) {
                     showPrelim = false; // 今天：只显示 PACKAGE
                     showPackage = true;
-                } else if (ts === tomorrowTime || ts === dayAfterTime) {
-                    showPrelim = true;  // 明天/后天：都显示
+                } else if (ts === tomorrowTime) {
+                    showPrelim = true;  // 明天：都显示
                     showPackage = true;
-                } else if (ts > dayAfterTime) {
-                    showPrelim = true;  // 未来（大后天及以后）：只显示 PRELIM
+                } else if (ts >= dayAfterTime) {
+                    showPrelim = true;  // 后天及以后：只显示 PRELIM
                     showPackage = false;
                 } 
                 // 过去日期的逻辑默认走 showPrelim = true, showPackage = true
 
                 const group = dateGroups[ts];
-                html += '<details open><summary>📅 ' + group.displayDate + '</summary>';
+                let groupHtml = '';
+                let hasContent = false;
                 
                 const acGroups = group.aircrafts;
                 const sortedAcs = Object.keys(acGroups).sort((a, b) => {
@@ -3914,9 +3915,15 @@ def run_feature_chk():
                     }
                     if (!block) continue;
 
-                    html += '<div class="pp-aircraft">' + ac + '</div><div class="code-block">' + escapeHtml(block) + '</div>';
+                    hasContent = true;
+                    groupHtml += '<div class="pp-aircraft">' + ac + '</div><div class="code-block">' + escapeHtml(block) + '</div>';
                 }
-                html += '</details>';
+                
+                if (hasContent) {
+                    html += '<details open><summary>📅 ' + group.displayDate + '</summary>';
+                    html += groupHtml;
+                    html += '</details>';
+                }
             }
             container.innerHTML = html;
         }
