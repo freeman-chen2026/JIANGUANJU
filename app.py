@@ -2970,6 +2970,9 @@ def run_feature_chk():
         CHK_PREFERRED.forEach((ac, i) => chkPriority[ac] = i);
         const chkDefaultPri = CHK_PREFERRED.length;
 
+        // 原版世界时专属排序优先级
+        const WT_PRIORITY = ['B652Q', 'B65AP', 'B652S', 'MLLIN', 'N88AY', 'B652R'];
+
         // 状态变量
         let currentChkRows = [];
         let currentChkFlights = [];
@@ -3274,11 +3277,26 @@ def run_feature_chk():
                 worldTimePlans[ac].forEach(it => lines.push(it.line));
                 worldTimeFlights.push({ reg: ac, text: lines.join('\n') });
             }
-            // 按机号优先级排序
+            
+            // 按原版世界时的优先级逻辑排序
             worldTimeFlights.sort((a, b) => {
-                const pa = chkPriority[a.reg] !== undefined ? chkPriority[a.reg] : chkDefaultPri;
-                const pb = chkPriority[b.reg] !== undefined ? chkPriority[b.reg] : chkDefaultPri;
-                return pa - pb;
+                const ia = WT_PRIORITY.indexOf(a.reg);
+                const ib = WT_PRIORITY.indexOf(b.reg);
+                
+                // 1. 都在优先级数组中：按优先级排
+                if (ia !== -1 && ib !== -1) return ia - ib;
+                // 2. 只有 a 在优先级中：a 排前面
+                if (ia !== -1) return -1;
+                // 3. 只有 b 在优先级中：b 排前面
+                if (ib !== -1) return 1;
+                
+                // 4. 都不在优先级中：
+                // N/A 永远垫底
+                if (a.reg === 'N/A' && b.reg !== 'N/A') return 1;
+                if (b.reg === 'N/A' && a.reg !== 'N/A') return -1;
+                
+                // 按字母排序
+                return a.reg.localeCompare(b.reg);
             });
 
             currentChkRows = chkRows;
