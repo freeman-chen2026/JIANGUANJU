@@ -2932,7 +2932,7 @@ def run_feature_chk():
 
     <div id="result" style="display:none;">
         <div class="toolbar">
-            <button class="primary" id="copyBtn">📋 一键复制全部检查单</button>
+            <button class="primary" id="copyBtn">📋 一键复制（今明后）检查单</button>
             <button id="toggleAllBtn">👁️ 显示所有计划</button>
             <button id="switchViewBtn" style="margin-left: 10px;">🌐 世界时行程</button>
             <span class="status" id="copyStatus"></span>
@@ -3154,7 +3154,7 @@ def run_feature_chk():
 
             const chkFlights = [];
             const chkRawItems = [];
-            const worldTimePlans = {}; // 按机号分组的世界时数据
+            const worldTimePlans = {}; 
 
             for (let i = headerIdx + 1; i < rows.length; i++) {
                 const r = rows[i];
@@ -3184,20 +3184,17 @@ def run_feature_chk():
                 const depTimeStr = parseTime(depTime);
                 const arrTimeStr = parseTime(arrTime);
 
-                // 1. 收集检查单用数据 (需要四字码)
+                // 1. 收集检查单用数据
                 if (orgStr.length === 4 && /^[A-Z]+$/.test(orgStr) &&
                     dstStr.length === 4 && /^[A-Z]+$/.test(dstStr)) {
                     chkFlights.push({
-                        aircraft: acStr,
-                        origin: orgStr,
-                        dest: dstStr,
-                        date: getUTCdate(depDate, depTime),
-                        date_bj: getBJdate(depDate),
+                        aircraft: acStr, origin: orgStr, dest: dstStr,
+                        date: getUTCdate(depDate, depTime), date_bj: getBJdate(depDate),
                         timestamp: timestamp
                     });
                 }
 
-                // 2. 收集提取文本用数据 (需要时间)
+                // 2. 收集提取文本用数据
                 if (depTimeStr && arrTimeStr) {
                     const depCityStr = get(colDepCity) ? String(get(colDepCity)).trim() : '';
                     const arrCityStr = get(colArrCity) ? String(get(colArrCity)).trim() : '';
@@ -3216,14 +3213,11 @@ def run_feature_chk():
                     const content = purposeStr.indexOf('调机') !== -1 ? 'F\n' + line1 + '\n' + line2 : line1 + '\n' + line2;
 
                     chkRawItems.push({
-                        aircraft: acStr,
-                        depDt: depDtObj,
-                        depTimeStr: depTimeStr,
-                        content: content,
+                        aircraft: acStr, depDt: depDtObj, depTimeStr: depTimeStr, content: content,
                     });
                 }
 
-                // 3. 收集世界时数据 (需要完整日期时间、四字码)
+                // 3. 收集世界时数据
                 const depUtc = toUTCLabel(depDate, depTimeStr);
                 const arrUtc = toUTCLabel(arrDate, arrTimeStr);
                 if (depUtc && arrUtc) {
@@ -3263,7 +3257,8 @@ def run_feature_chk():
                 if (!first && (curDate !== prevDate || curAc !== prevAc)) {
                     chkRows.push({ type: 'blank' });
                 }
-                chkRows.push({ type: 'data', content: it.content });
+                // 注意这里：加入了 timestamp，让复制时可以判断日期
+                chkRows.push({ type: 'data', content: it.content, timestamp: curDate || 0 });
                 prevDate = curDate;
                 prevAc = curAc;
                 first = false;
@@ -3278,24 +3273,14 @@ def run_feature_chk():
                 worldTimeFlights.push({ reg: ac, text: lines.join('\n') });
             }
             
-            // 按原版世界时的优先级逻辑排序
             worldTimeFlights.sort((a, b) => {
                 const ia = WT_PRIORITY.indexOf(a.reg);
                 const ib = WT_PRIORITY.indexOf(b.reg);
-                
-                // 1. 都在优先级数组中：按优先级排
                 if (ia !== -1 && ib !== -1) return ia - ib;
-                // 2. 只有 a 在优先级中：a 排前面
                 if (ia !== -1) return -1;
-                // 3. 只有 b 在优先级中：b 排前面
                 if (ib !== -1) return 1;
-                
-                // 4. 都不在优先级中：
-                // N/A 永远垫底
                 if (a.reg === 'N/A' && b.reg !== 'N/A') return 1;
                 if (b.reg === 'N/A' && a.reg !== 'N/A') return -1;
-                
-                // 按字母排序
                 return a.reg.localeCompare(b.reg);
             });
 
@@ -3318,14 +3303,9 @@ def run_feature_chk():
         // ============ 渲染控制 ============
         function renderAll() {
             document.getElementById('result').style.display = 'block';
-            
-            // 渲染检查单视图
             renderPrelimPackage(currentChkFlights, showAllPlans);
             generateJsScript(currentChkFlights);
-            
-            // 渲染世界时视图
             renderWorldTime(currentWorldTimeFlights, showDomestic);
-            
             updateUIState();
         }
 
@@ -3465,7 +3445,6 @@ def run_feature_chk():
                 });
                 html += '</div>';
                 
-                // 添加单机复制按钮
                 const copyText = reg + '\n' + routes.join('\n');
                 const b64Text = btoa(unescape(encodeURIComponent(copyText)));
                 html += '<button style="margin-top:6px;" onclick="copyTextFromB64(\''+b64Text+'\', this)">📋 复制该飞机</button>';
@@ -3499,13 +3478,46 @@ def run_feature_chk():
             });
         }
 
-        // ============ 其他辅助逻辑 ============
+        // ============ 复制检查单逻辑 ============
         async function copyChecklist() {
             const status = document.getElementById('copyStatus');
             const TD_STYLE = "text-align:center; vertical-align:middle; font-family:'Times New Roman', Times, serif; font-size:16pt; border:1px solid #000000; padding:2px 6px;";
             
-            let htmlTable = '<table style="border-collapse: collapse;">';
+            // 计算今天、明天、后天的边界时间戳
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const dayAfter = new Date(today); dayAfter.setDate(today.getDate() + 2);
+            const todayTime = today.getTime();
+            const dayAfterEnd = dayAfter.getTime() + 86399999; // 后天 23:59:59.999
+
+            const copyRows = [];
+            let pendingBlank = null;
+
             for (const row of currentChkRows) {
+                if (row.type === 'blank') {
+                    pendingBlank = row;
+                } else {
+                    const ts = row.timestamp || 0;
+                    // 只取今天、明天、后天的数据
+                    if (ts >= todayTime && ts <= dayAfterEnd) {
+                        if (pendingBlank) {
+                            copyRows.push(pendingBlank);
+                            pendingBlank = null;
+                        }
+                        copyRows.push(row);
+                    } else {
+                        pendingBlank = null; // 超出范围，丢弃暂存的空行
+                    }
+                }
+            }
+
+            if (copyRows.length === 0) {
+                status.textContent = '⚠️ 今天、明天、后天没有检查单可复制';
+                status.style.color = '#d32f2f';
+                return;
+            }
+
+            let htmlTable = '<table style="border-collapse: collapse;">';
+            for (const row of copyRows) {
                 if (row.type === 'blank') {
                     htmlTable += '<tr><td style="' + TD_STYLE + '">&nbsp;</td></tr>';
                 } else {
@@ -3515,7 +3527,7 @@ def run_feature_chk():
             }
             htmlTable += '</table>';
 
-            const plain = currentChkRows.map(r => r.type === 'blank' ? '' : r.content).join('\n\n');
+            const plain = copyRows.map(r => r.type === 'blank' ? '' : r.content).join('\n\n');
 
             try {
                 await navigator.clipboard.write([
@@ -3524,7 +3536,7 @@ def run_feature_chk():
                         'text/plain': new Blob([plain], { type: 'text/plain' })
                     })
                 ]);
-                status.textContent = '✅ 已复制（保留格式）';
+                status.textContent = '✅ 已复制（今明后，保留格式）';
                 status.style.color = '#2e7d32';
             } catch (e) {
                 const div = document.createElement('div');
