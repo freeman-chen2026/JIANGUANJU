@@ -304,10 +304,10 @@ def update_excel1(excel1_path, excel2_df, flight_col, dep_col, arr_col, reg_col,
 
 
 def run_feature_a():
-    excel1_file = sess_file_uploader("📂 上传：昨日飞行数据（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
+    excel1_file = sess_file_uploader("📂 上传：昨日飞行计划日报（operation-每日飞行数据）", type=["xlsx", "xlsm"], key="a_excel1")
     excel2_file = sess_file_uploader("📂 上传：航段数据导出（昨日B机）", type=["xlsx", "xlsm"], key="a_excel2")
     excel3_file = sess_file_uploader(
-        "📂 上传：航段数据导出（今天次日，比如今日12号，上传13号的航段数据）（用于填入次日飞行计划运行地点）",
+        "📂 上传：航段数据导出（今天的次日，比如今日12号，上传13号的航段数据）（用于填入次日飞行计划运行地点）",
         type=["xlsx", "xlsm"],
         key="a_excel3"
     )
