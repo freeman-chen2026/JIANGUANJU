@@ -2296,7 +2296,29 @@ def run_feature_e():
                         current_date = first_cell
                     day_row = row
                 elif "晚" in second_cell and day_row is not None:
-                    if current_date is None:# ==============================
+                    if current_date is None:
+                        
+                        
+                        
+                        
+                        
+
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+                        
+# ==============================
 # 功能 E：值班连班统计
 # ==============================
 def run_feature_e():
