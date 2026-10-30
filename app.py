@@ -2222,102 +2222,17 @@ def run_feature_d():
         st.info("请上传 Excel 文件开始")
 
 
-# ==============================
-# 功能 E：值班连班统计
-# ==============================
-def run_feature_e():
-    st.markdown("上传值班表（PDF或Excel），自动统计运管主班、运控白班/夜班、补贴天数和休息天数。")
 
-    uploaded_file = sess_file_uploader("上传值班表（PDF或Excel）", type=["pdf", "xlsx", "xls"], key="e_upload")
 
-    control_staff_input = st.text_input(
-        "值班人员名单（空格分隔）",
-        value="陈宇鸣 周贤民 吴迪 王浩宇 林泓辰 陈育盛 钟洪达",
-        key="e_control"
-    )
 
-    if uploaded_file:
-        control_staff = set(control_staff_input.strip().split())
-        target_staff = control_staff
 
-        schedules = []
-        file_type = uploaded_file.type
 
-        if file_type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "application/vnd.ms-excel"]:
-            try:
-                df = pd.read_excel(uploaded_file, header=None, engine='openpyxl')
-            except Exception as e:
-                st.error(f"读取Excel失败: {e}")
-                st.stop()
 
-            st.subheader("原始表格预览（前20行）")
-            st.dataframe(df.head(20))
 
-            header_idx = None
-            for i, row in df.iterrows():
-                row_str = " ".join([str(c) for c in row if pd.notna(c)])
-                if "运行管理" in row_str:
-                    header_idx = i
-                    break
 
-            if header_idx is None:
-                st.error("未找到包含'运行管理'的表头行")
-                st.stop()
 
-            col_mapping = {}
-            for idx, val in enumerate(df.iloc[header_idx]):
-                val_str = str(val) if pd.notna(val) else ""
-                if "运行管理" in val_str:
-                    col_mapping[idx] = "management"
-                elif "运行计划" in val_str:
-                    col_mapping[idx] = "plan"
-                elif "运行监控" in val_str:
-                    col_mapping[idx] = "control"
-                elif "运行保障" in val_str:
-                    col_mapping[idx] = "control"
-                elif "运行支援" in val_str:
-                    col_mapping[idx] = "control"
 
-            data_start = header_idx + 1
-            current_date = None
-            day_row = None
 
-            for i in range(data_start, len(df)):
-                row = df.iloc[i]
-                second_cell = str(row[1]) if pd.notna(row[1]) else ""
-                second_cell = second_cell.strip()
-
-                if "白" in second_cell:
-                    first_cell = str(row[0]) if pd.notna(row[0]) else ""
-                    date_match = re.search(r"(\d+月\d+日|\d+日)", first_cell)
-                    if date_match:
-                        current_date = date_match.group(1)
-                    else:
-                        current_date = first_cell
-                    day_row = row
-                elif "晚" in second_cell and day_row is not None:
-                    if current_date is None:
-                        
-                        
-                        
-                        
-                        
-
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
-                        
 # ==============================
 # 功能 E：值班连班统计
 # ==============================
@@ -2578,7 +2493,6 @@ def run_feature_e():
         *   仅当**连续休息天数 ≥ 2天**时，才计为有效休息天数。
         *   连续休息 N 天，计为 **(N - 1) 天**（例如：连续休息 3 天算 2 天休息，单休 1 天不计入休息天数）。
         """)
-
 
 
 
