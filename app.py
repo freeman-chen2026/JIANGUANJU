@@ -1039,8 +1039,6 @@ def run_feature_c():
 
 
 
-
-
 # ==============================
 # 功能 D：通航脚本生成器（完整版，包含所有依赖字典与脚本生成函数）
 # ==============================
@@ -2102,7 +2100,7 @@ async function runNextDayPlans() {{
 
 
 def run_feature_d():
-    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先执行当日计划，再备案未来及漏备案计划**。")
+    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先执行当日已飞完计划，再备案未来及漏备案计划**。")
 
     header_row = 1
     uploaded_file = sess_file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
@@ -2192,8 +2190,10 @@ def run_feature_d():
                         
                         c1, c2 = st.columns([4, 1])
                         with c1:
-                            do_exec = st.checkbox(label, value=is_landed, key=f"exec_{idx}")
+                            # 未飞完的计划，直接禁用执行框，防止误勾
+                            do_exec = st.checkbox(label, value=is_landed, key=f"exec_{idx}", disabled=not is_landed)
                         with c2:
+                            # 补备案默认不勾选，任何时候都可以勾选
                             do_backup = st.checkbox("补备案", value=False, key=f"backup_{idx}", help="如果昨天漏备案，可勾选此项")
                         
                         if do_exec:
@@ -2245,7 +2245,7 @@ def run_feature_d():
 """
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
             st.code(final_script, language="javascript")
-            st.info("💡 提示：请确保已登录系统并停留在「经营活动信息管理」列表页，脚本将自动处理当日执行计划和备案计划。")
+            st.info("💡 提示：请确保已登录系统并保持在「经营活动信息管理」列表页，脚本将自动处理当日执行计划和备案计划。")
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
                 data=final_script,
@@ -2258,7 +2258,6 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-
 
 
 
