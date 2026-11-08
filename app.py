@@ -1006,8 +1006,43 @@ def run_feature_c():
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # ==============================
-# 功能 D：通航脚本生成器（完整版，包含所有脚本生成函数与字典）
+# 功能 D：通航脚本生成器（完整版，包含所有依赖字典与脚本生成函数）
 # ==============================
 COUNTRIES = [
     "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
@@ -2091,9 +2126,7 @@ def run_feature_d():
             today = date.today()
 
             # 数据拆分
-            # 1. 今日计划（含已飞完和未飞完）
             df_today = df[df['出发日期'] == today].copy()
-            # 2. 未来计划
             df_future = df[df['出发日期'] > today].copy()
 
             st.info(f"✅ 共读取 {len(df)} 条计划。今日计划: {len(df_today)} 条，未来计划: {len(df_future)} 条。")
@@ -2107,6 +2140,8 @@ def run_feature_d():
                 for k, v in rec_dict.items():
                     if pd.isna(v):
                         rec_dict[k] = ""
+                    elif isinstance(v, (date, datetime)): # 修复 JSON 序列化报错
+                        rec_dict[k] = str(v)
                 return rec_dict
 
             def get_future_rec(row):
@@ -2153,16 +2188,12 @@ def run_feature_d():
                 if len(df_today) > 0:
                     for idx, row in df_today.iterrows():
                         label = f"{row['飞机注册号']} {row['出发日期']} {row['出发城市']}->{row['到达城市']}"
-                        
-                        # 判断是否已落地
                         is_landed = pd.notna(row["实际到达"]) and str(row["实际到达"]).strip() != ""
                         
                         c1, c2 = st.columns([4, 1])
                         with c1:
-                            # 已落地默认勾选执行，未落地默认不勾选
                             do_exec = st.checkbox(label, value=is_landed, key=f"exec_{idx}")
                         with c2:
-                            # 补备案默认都不勾选
                             do_backup = st.checkbox("补备案", value=False, key=f"backup_{idx}", help="如果昨天漏备案，可勾选此项")
                         
                         if do_exec:
@@ -2227,6 +2258,35 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
