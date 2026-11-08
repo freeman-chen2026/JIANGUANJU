@@ -1042,8 +1042,19 @@ def run_feature_d():
                     purpose = "自用飞行"
                 start_date = str(row["出发日期"])
                 end_date = str(row["到达日期"])
-                flight_time = row.get("预计飞行时间", "")
-                hours, minutes = parse_flight_time(flight_time)
+                
+                # 内联解析时间，不依赖外部函数
+                flight_time = str(row.get("预计飞行时间", "")).strip()
+                hours, minutes = 0, 0
+                if flight_time:
+                    parts = flight_time.split(':')
+                    if len(parts) >= 2:
+                        try:
+                            hours = int(float(parts[0]))
+                            minutes = int(float(parts[1]))
+                        except:
+                            pass
+
                 dep_city = str(row["出发城市"]).strip()
                 arr_city = str(row["到达城市"]).strip()
                 reg_raw = str(row["飞机注册号"]).strip()
