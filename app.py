@@ -2100,17 +2100,14 @@ async function {func_name}() {{
 
 
 def run_feature_d():
-    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**严格按照：先补备案 -> 再执行当日 -> 最后备案未来 的逻辑运行**。")
-
-    header_row = 1
-    uploaded_file = sess_file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
+    # 1. 修改上传组件 Label
+    uploaded_file = sess_file_uploader("上传：航段数据导出", type=["xlsx", "xls"], key="d_upload")
 
     if uploaded_file is not None:
         try:
-            df = pd.read_excel(uploaded_file, header=header_row)
+            df = pd.read_excel(uploaded_file, header=1)
             df.columns = df.columns.str.strip()
             df = df.dropna(how='all')
-            st.success("文件上传成功！")
 
             required_cols = ["飞机注册号", "出发日期", "到达日期", "用途", "出发城市", "到达城市", "预计飞行时间", "实际到达"]
             missing = [col for col in required_cols if col not in df.columns]
@@ -2119,19 +2116,18 @@ def run_feature_d():
                 st.info(f"实际列名: {list(df.columns)}")
                 return
 
+            # 2. 剔除不是 B 开头的外机计划
+            df = df[df["飞机注册号"].astype(str).str.startswith("B", na=False)].copy()
+
             # 处理日期格式
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
             today = date.today()
+            tomorrow = today + timedelta(days=1)
 
-            # 数据拆分
+            # 数据拆分：今日、明日、未来
             df_today = df[df['出发日期'] == today].copy()
-            df_future = df[df['出发日期'] > today].copy()
-
-            st.info(f"✅ 共读取 {len(df)} 条计划。今日计划: {len(df_today)} 条，未来计划: {len(df_future)} 条。")
-
-            if len(df_today) == 0 and len(df_future) == 0:
-                st.warning("没有需要处理的计划。")
-                return
+            df_tomorrow = df[df['出发日期'] == tomorrow].copy()
+            df_future = df[df['出发日期'] > tomorrow].copy()
 
             def get_daily_rec(row):
                 rec_dict = row.to_dict()
@@ -2205,18 +2201,38 @@ def run_feature_d():
                     st.info("暂无今日计划")
 
             with col2:
-                st.markdown("### 📝 备案的计划（未来）")
-                if len(df_future) > 0:
-                    select_all_file = st.checkbox("全选未来计划", value=True, key="select_all_file")
-                    for idx, row in df_future.iterrows():
+                st.markdown("### 📝 备案的计划（明日）")
+                if len(df_tomorrow) > 0:
+                    select_all_file = st.checkbox("全选明日计划", value=True, key="select_all_tomorrow")
+                    for idx, row in df_tomorrow.iterrows():
                         label = f"{row['飞机注册号']} {row['出发日期']} {row['出发城市']}->{row['到达城市']}"
-                        do_file = st.checkbox(label, value=select_all_file, key=f"file_future_{idx}")
+                        do_file = st.checkbox(label, value=select_all_file, key=f"file_tomorrow_{idx}")
                         if do_file:
                             list_future.append(get_future_rec(row))
                 else:
+                    st.info("暂无明日计划")
+
+            # 显示未来计划（折叠区域）
+            st.markdown("---")
+            show_future = st.checkbox("📅 显示后天及未来的计划", value=False, key="show_future_plans")
+            
+            if show_future:
+                if len(df_future) > 0:
+                    # 按日期分组
+                    future_dates = sorted(df_future['出发日期'].unique())
+                    for d in future_dates:
+                        df_day = df_future[df_future['出发日期'] == d]
+                        with st.expander(f"📅 {d} (共 {len(df_day)} 条计划)", expanded=False):
+                            for idx, row in df_day.iterrows():
+                                label = f"{row['飞机注册号']} {row['出发城市']}->{row['到达城市']}"
+                                do_file = st.checkbox(label, value=False, key=f"file_future_{idx}")
+                                if do_file:
+                                    list_future.append(get_future_rec(row))
+                else:
                     st.info("暂无未来计划")
 
-            st.success(f"✅ 最终脚本将按顺序执行：{len(list_backup)} 条补备案 -> {len(list_execute)} 条执行 -> {len(list_future)} 条未来备案")
+            # 汇总提示
+            st.success(f"✅ 最终脚本将按顺序执行：{len(list_backup)} 条补备案 -> {len(list_execute)} 条执行 -> {len(list_future)} 条备案")
 
             custom_detail_map = {}
             city_map, detail_map = build_city_mappings(df, custom_detail_map)
