@@ -1035,7 +1035,6 @@ def run_feature_c():
 
 
 
-
 # ==============================
 # 功能 D：通航脚本生成器（ICAO 维表版）
 # 只替换本段；其余功能不动
@@ -1981,12 +1980,23 @@ async function ensureListPage() {
 """
 
 
+_BJ_TZ = timezone(timedelta(hours=8))   # Streamlit Cloud 服务器多为 UTC，这里固定按北京时间显示
+
+
+def gen_time_text():
+    """脚本生成时间（北京时间，精确到秒）"""
+    return datetime.now(_BJ_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def generate_base_script(city_map_json):
     airport_json = json.dumps(
         {icao: {"p": t[0], "a": t[1], "n": t[2], "c": t[3]} for icao, t in AIRPORT_TABLE.items()},
         ensure_ascii=False, separators=(",", ":")
     )
-    header = f"// 机场维表 {len(AIRPORT_TABLE)} 条；境内按 ICAO 判定，匹配不到即跳过该计划\n"
+    header = (f"// ============================================================\n"
+              f"// 生成时间：{gen_time_text()}（北京时间 UTC+8）\n"
+              f"// 机场维表 {len(AIRPORT_TABLE)} 条；境内按 ICAO 判定，匹配不到即跳过该计划\n"
+              f"// ============================================================\n")
     return (header
             + _JS_HEAD
             + "\nconst CITY_MAP = " + city_map_json + ";\n"
@@ -2604,6 +2614,7 @@ def run_feature_d():
 })();
 """
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
+            st.caption(f"⏱ 本脚本生成于 {gen_time_text()}（北京时间），换行/勾选后时间会刷新——粘贴前先确认是最新时间。")
 
             # 新增手动刷新按钮
             if st.button("🔄 强制刷新脚本", help="如果下方代码没有更新，请点击此按钮"):
@@ -2625,6 +2636,7 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
+
 
 
 
