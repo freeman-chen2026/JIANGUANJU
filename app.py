@@ -1037,325 +1037,190 @@ def run_feature_c():
 
 
 # ==============================
-# 功能 D：通航脚本生成器（终极增强版：完美适配行政区划三级联动）
+# 功能 D：通航脚本生成器（完整版，包含智能匹配与三日独立拆分）
 # ==============================
-# 格式：四字码 -> {"province": "省级全称", "sys_city": "网页下拉框城市/地州", "airport_name": "详细作业区机场名"}
-DOMESTIC_ICAO_MAP = {
-    "ZBAA": {"province": "北京", "sys_city": "北京", "airport_name": "首都"},
-    "ZBAD": {"province": "北京", "sys_city": "北京", "airport_name": "大兴"},
-    "ZBAL": {"province": "内蒙古自治区", "sys_city": "阿拉善盟", "airport_name": "阿拉善左旗"},
-    "ZBAR": {"province": "内蒙古自治区", "sys_city": "阿拉善盟", "airport_name": "阿拉善右旗"},
-    "ZBCD": {"province": "河北省", "sys_city": "承德", "airport_name": "承德"},
-    "ZBCF": {"province": "内蒙古自治区", "sys_city": "赤峰", "airport_name": "赤峰"},
-    "ZBCZ": {"province": "山西省", "sys_city": "长治", "airport_name": "长治"},
-    "ZBDH": {"province": "河北省", "sys_city": "秦皇岛", "airport_name": "秦皇岛"},
-    "ZBDS": {"province": "内蒙古自治区", "sys_city": "鄂尔多斯", "airport_name": "鄂尔多斯"},
-    "ZBDT": {"province": "山西省", "sys_city": "大同", "airport_name": "大同"},
-    "ZBEN": {"province": "内蒙古自治区", "sys_city": "阿拉善盟", "airport_name": "额济纳旗"},
-    "ZBER": {"province": "内蒙古自治区", "sys_city": "锡林郭勒盟", "airport_name": "二连浩特"},
-    "ZBES": {"province": "内蒙古自治区", "sys_city": "兴安盟", "airport_name": "阿尔山"},
-    "ZBHD": {"province": "河北省", "sys_city": "邯郸", "airport_name": "邯郸"},
-    "ZBHH": {"province": "内蒙古自治区", "sys_city": "呼和浩特", "airport_name": "呼和浩特"},
-    "ZBHZ": {"province": "内蒙古自治区", "sys_city": "通辽", "airport_name": "霍林郭勒"},
-    "ZBLA": {"province": "内蒙古自治区", "sys_city": "呼伦贝尔", "airport_name": "海拉尔"},
-    "ZBLF": {"province": "山西省", "sys_city": "临汾", "airport_name": "临汾"},
-    "ZBLL": {"province": "山西省", "sys_city": "吕梁", "airport_name": "吕梁"},
-    "ZBMZ": {"province": "内蒙古自治区", "sys_city": "呼伦贝尔", "airport_name": "满洲里"},
-    "ZBOW": {"province": "内蒙古自治区", "sys_city": "包头", "airport_name": "包头"},
-    "ZBSG": {"province": "山西省", "sys_city": "朔州", "airport_name": "朔州"},
-    "ZBSJ": {"province": "河北省", "sys_city": "石家庄", "airport_name": "石家庄"},
-    "ZBSN": {"province": "河北省", "sys_city": "唐山", "airport_name": "唐山"},
-    "ZBTJ": {"province": "天津", "sys_city": "天津", "airport_name": "滨海"},
-    "ZBTL": {"province": "内蒙古自治区", "sys_city": "通辽", "airport_name": "通辽"},
-    "ZBUC": {"province": "内蒙古自治区", "sys_city": "乌兰察布", "airport_name": "乌兰察布"},
-    "ZBUH": {"province": "内蒙古自治区", "sys_city": "乌海", "airport_name": "乌海"},
-    "ZBUL": {"province": "内蒙古自治区", "sys_city": "兴安盟", "airport_name": "乌兰浩特"},
-    "ZBXH": {"province": "内蒙古自治区", "sys_city": "锡林郭勒盟", "airport_name": "锡林浩特"},
-    "ZBXT": {"province": "河北省", "sys_city": "邢台", "airport_name": "邢台"},
-    "ZBXZ": {"province": "山西省", "sys_city": "忻州", "airport_name": "忻州"},
-    "ZBYC": {"province": "山西省", "sys_city": "运城", "airport_name": "运城"},
-    "ZBYN": {"province": "山西省", "sys_city": "太原", "airport_name": "太原"},
-    "ZBYZ": {"province": "内蒙古自治区", "sys_city": "巴彦淖尔", "airport_name": "巴彦淖尔"},
-    "ZBZJ": {"province": "河北省", "sys_city": "张家口", "airport_name": "张家口"},
-    "ZBZL": {"province": "内蒙古自治区", "sys_city": "呼伦贝尔", "airport_name": "扎兰屯"},
-    "ZGBH": {"province": "广西壮族自治区", "sys_city": "北海", "airport_name": "北海"},
-    "ZGBS": {"province": "广西壮族自治区", "sys_city": "百色", "airport_name": "百色"},
-    "ZGCD": {"province": "湖南省", "sys_city": "常德", "airport_name": "常德"},
-    "ZGCJ": {"province": "湖南省", "sys_city": "怀化", "airport_name": "怀化"},
-    "ZGCZ": {"province": "湖南省", "sys_city": "郴州", "airport_name": "郴州"},
-    "ZGDY": {"province": "湖南省", "sys_city": "张家界", "airport_name": "张家界"},
-    "ZGGG": {"province": "广东省", "sys_city": "广州", "airport_name": "白云"},
-    "ZGHA": {"province": "湖南省", "sys_city": "长沙", "airport_name": "黄花"},
-    "ZGHC": {"province": "广西壮族自治区", "sys_city": "河池", "airport_name": "河池"},
-    "ZGHY": {"province": "湖南省", "sys_city": "衡阳", "airport_name": "衡阳"},
-    "ZGHZ": {"province": "广东省", "sys_city": "惠州", "airport_name": "惠州"},
-    "ZGKL": {"province": "广西壮族自治区", "sys_city": "桂林", "airport_name": "两江"},
-    "ZGLD": {"province": "广东省", "sys_city": "云浮", "airport_name": "罗定"},
-    "ZGLG": {"province": "湖南省", "sys_city": "永州", "airport_name": "永州"},
-    "ZGMX": {"province": "广东省", "sys_city": "梅州", "airport_name": "梅州"},
-    "ZGNN": {"province": "广西壮族自治区", "sys_city": "南宁", "airport_name": "吴圩"},
-    "ZGOW": {"province": "广东省", "sys_city": "揭阳", "airport_name": "潮汕"},
-    "ZGSD": {"province": "广东省", "sys_city": "珠海", "airport_name": "金湾"},
-    "ZGSG": {"province": "广东省", "sys_city": "韶关", "airport_name": "韶关"},
-    "ZGSY": {"province": "湖南省", "sys_city": "邵阳", "airport_name": "邵阳"},
-    "ZGSZ": {"province": "广东省", "sys_city": "深圳", "airport_name": "宝安"},
-    "ZGUH": {"province": "广东省", "sys_city": "珠海", "airport_name": "珠海"},
-    "ZGWZ": {"province": "广西壮族自治区", "sys_city": "梧州", "airport_name": "梧州"},
-    "ZGXX": {"province": "湖南省", "sys_city": "湘西", "airport_name": "湘西"},
-    "ZGYJ": {"province": "广东省", "sys_city": "阳江", "airport_name": "阳江"},
-    "ZGYL": {"province": "广西壮族自治区", "sys_city": "玉林", "airport_name": "玉林"},
-    "ZGYY": {"province": "湖南省", "sys_city": "岳阳", "airport_name": "岳阳"},
-    "ZGZH": {"province": "广西壮族自治区", "sys_city": "柳州", "airport_name": "白莲"},
-    "ZGZJ": {"province": "广东省", "sys_city": "湛江", "airport_name": "湛江"},
-    "ZHCC": {"province": "河南省", "sys_city": "郑州", "airport_name": "新郑"},
-    "ZHEC": {"province": "湖北省", "sys_city": "鄂州", "airport_name": "鄂州"},
-    "ZHES": {"province": "湖北省", "sys_city": "恩施", "airport_name": "恩施"},
-    "ZHHH": {"province": "湖北省", "sys_city": "武汉", "airport_name": "天河"},
-    "ZHJZ": {"province": "湖北省", "sys_city": "荆州", "airport_name": "荆州"},
-    "ZHLY": {"province": "河南省", "sys_city": "洛阳", "airport_name": "洛阳"},
-    "ZHNY": {"province": "河南省", "sys_city": "南阳", "airport_name": "南阳"},
-    "ZHQQ": {"province": "河南省", "sys_city": "安阳", "airport_name": "安阳"},
-    "ZHSN": {"province": "湖北省", "sys_city": "神农架", "airport_name": "神农架"},
-    "ZHSY": {"province": "湖北省", "sys_city": "十堰", "airport_name": "十堰"},
-    "ZHXF": {"province": "湖北省", "sys_city": "襄阳", "airport_name": "襄阳"},
-    "ZHXY": {"province": "河南省", "sys_city": "信阳", "airport_name": "信阳"},
-    "ZHYC": {"province": "湖北省", "sys_city": "宜昌", "airport_name": "宜昌"},
-    "ZJHK": {"province": "海南省", "sys_city": "海口", "airport_name": "美兰"},
-    "ZJQH": {"province": "海南省", "sys_city": "琼海", "airport_name": "琼海"},
-    "ZJSY": {"province": "海南省", "sys_city": "三亚", "airport_name": "凤凰"},
-    "ZJYX": {"province": "海南省", "sys_city": "三沙", "airport_name": "三沙"},
-    "ZLAK": {"province": "陕西省", "sys_city": "安康", "airport_name": "安康"},
-    "ZLDH": {"province": "甘肃省", "sys_city": "酒泉", "airport_name": "敦煌"},
-    "ZLDL": {"province": "青海省", "sys_city": "海西", "airport_name": "海西"},
-    "ZLGL": {"province": "青海省", "sys_city": "果洛", "airport_name": "果洛"},
-    "ZLGM": {"province": "青海省", "sys_city": "海西", "airport_name": "格尔木"},
-    "ZLGY": {"province": "宁夏回族自治区", "sys_city": "固原", "airport_name": "固原"},
-    "ZLHB": {"province": "青海省", "sys_city": "海北", "airport_name": "海北"},
-    "ZLHX": {"province": "青海省", "sys_city": "海西", "airport_name": "海西"},
-    "ZLHZ": {"province": "陕西省", "sys_city": "汉中", "airport_name": "汉中"},
-    "ZLIC": {"province": "宁夏回族自治区", "sys_city": "银川", "airport_name": "河东"},
-    "ZLJC": {"province": "甘肃省", "sys_city": "金昌", "airport_name": "金昌"},
-    "ZLJQ": {"province": "甘肃省", "sys_city": "嘉峪关", "airport_name": "嘉峪关"},
-    "ZLLL": {"province": "甘肃省", "sys_city": "兰州", "airport_name": "中川"},
-    "ZLLN": {"province": "甘肃省", "sys_city": "陇南", "airport_name": "陇南"},
-    "ZLQY": {"province": "甘肃省", "sys_city": "庆阳", "airport_name": "庆阳"},
-    "ZLTS": {"province": "甘肃省", "sys_city": "天水", "airport_name": "天水"},
-    "ZLXH": {"province": "甘肃省", "sys_city": "甘南", "airport_name": "甘南"},
-    "ZLXN": {"province": "青海省", "sys_city": "西宁", "airport_name": "曹家堡"},
-    "ZLXY": {"province": "陕西省", "sys_city": "西安", "airport_name": "咸阳"},
-    "ZLYA": {"province": "陕西省", "sys_city": "延安", "airport_name": "延安"},
-    "ZLYL": {"province": "陕西省", "sys_city": "榆林", "airport_name": "榆林"},
-    "ZLYS": {"province": "青海省", "sys_city": "玉树", "airport_name": "玉树"},
-    "ZLZW": {"province": "宁夏回族自治区", "sys_city": "中卫", "airport_name": "中卫"},
-    "ZLZY": {"province": "甘肃省", "sys_city": "张掖", "airport_name": "张掖"},
-    "ZPBS": {"province": "云南省", "sys_city": "保山", "airport_name": "保山"},
-    "ZPCW": {"province": "云南省", "sys_city": "临沧", "airport_name": "沧源"},
-    "ZPDL": {"province": "云南省", "sys_city": "大理", "airport_name": "大理"},
-    "ZPDQ": {"province": "云南省", "sys_city": "迪庆", "airport_name": "迪庆"},
-    "ZPJH": {"province": "云南省", "sys_city": "西双版纳", "airport_name": "西双版纳"},
-    "ZPJM": {"province": "云南省", "sys_city": "普洱", "airport_name": "澜沧"},
-    "ZPLC": {"province": "云南省", "sys_city": "临沧", "airport_name": "临沧"},
-    "ZPLJ": {"province": "云南省", "sys_city": "丽江", "airport_name": "三义"},
-    "ZPMS": {"province": "云南省", "sys_city": "德宏", "airport_name": "德宏"},
-    "ZPNL": {"province": "云南省", "sys_city": "丽江", "airport_name": "宁蒗"},
-    "ZPPP": {"province": "云南省", "sys_city": "昆明", "airport_name": "长水"},
-    "ZPSM": {"province": "云南省", "sys_city": "普洱", "airport_name": "思茅"},
-    "ZPTC": {"province": "云南省", "sys_city": "保山", "airport_name": "腾冲"},
-    "ZPWS": {"province": "云南省", "sys_city": "文山", "airport_name": "文山"},
-    "ZPZT": {"province": "云南省", "sys_city": "昭通", "airport_name": "昭通"},
-    "ZSAM": {"province": "福建省", "sys_city": "厦门", "airport_name": "高崎"},
-    "ZSAQ": {"province": "安徽省", "sys_city": "安庆", "airport_name": "安庆"},
-    "ZSBA": {"province": "安徽省", "sys_city": "蚌埠", "airport_name": "蚌埠"},
-    "ZSBO": {"province": "安徽省", "sys_city": "亳州", "airport_name": "亳州"},
-    "ZSCG": {"province": "江苏省", "sys_city": "常州", "airport_name": "奔牛"},
-    "ZSCN": {"province": "江西省", "sys_city": "南昌", "airport_name": "昌北"},
-    "ZSDY": {"province": "山东省", "sys_city": "东营", "airport_name": "东营"},
-    "ZSFY": {"province": "安徽省", "sys_city": "阜阳", "airport_name": "阜阳"},
-    "ZSFZ": {"province": "福建省", "sys_city": "福州", "airport_name": "长乐"},
-    "ZSGS": {"province": "江西省", "sys_city": "吉安", "airport_name": "井冈山"},
-    "ZSGZ": {"province": "江西省", "sys_city": "赣州", "airport_name": "黄金"},
-    "ZSHC": {"province": "浙江省", "sys_city": "杭州", "airport_name": "萧山"},
-    "ZSHZ": {"province": "山东省", "sys_city": "菏泽", "airport_name": "菏泽"},
-    "ZSJD": {"province": "江西省", "sys_city": "景德镇", "airport_name": "景德镇"},
-    "ZSJG": {"province": "山东省", "sys_city": "济宁", "airport_name": "济宁"},
-    "ZSJH": {"province": "安徽省", "sys_city": "池州", "airport_name": "池州"},
-    "ZSJJ": {"province": "江西省", "sys_city": "九江", "airport_name": "九江"},
-    "ZSJN": {"province": "山东省", "sys_city": "济南", "airport_name": "遥墙"},
-    "ZSJU": {"province": "浙江省", "sys_city": "衢州", "airport_name": "衢州"},
-    "ZSJX": {"province": "浙江省", "sys_city": "嘉兴", "airport_name": "嘉兴"},
-    "ZSLG": {"province": "江苏省", "sys_city": "连云港", "airport_name": "连云港"},
-    "ZSLI": {"province": "浙江省", "sys_city": "丽水", "airport_name": "丽水"},
-    "ZSLO": {"province": "福建省", "sys_city": "龙岩", "airport_name": "连城"},
-    "ZSLQ": {"province": "浙江省", "sys_city": "台州", "airport_name": "台州"},
-    "ZSLY": {"province": "山东省", "sys_city": "临沂", "airport_name": "临沂"},
-    "ZSNB": {"province": "浙江省", "sys_city": "宁波", "airport_name": "栎社"},
-    "ZSNJ": {"province": "江苏省", "sys_city": "南京", "airport_name": "禄口"},
-    "ZSNT": {"province": "江苏省", "sys_city": "南通", "airport_name": "南通"},
-    "ZSOF": {"province": "安徽省", "sys_city": "合肥", "airport_name": "新桥"},
-    "ZSPD": {"province": "上海", "sys_city": "上海", "airport_name": "浦东"},
-    "ZSQD": {"province": "山东省", "sys_city": "青岛", "airport_name": "胶东"},
-    "ZSQZ": {"province": "福建省", "sys_city": "泉州", "airport_name": "晋江"},
-    "ZSRJ": {"province": "江西省", "sys_city": "赣州", "airport_name": "瑞金"},
-    "ZSRZ": {"province": "山东省", "sys_city": "日照", "airport_name": "日照"},
-    "ZSSH": {"province": "江苏省", "sys_city": "淮安", "airport_name": "淮安"},
-    "ZSSM": {"province": "福建省", "sys_city": "三明", "airport_name": "三明"},
-    "ZSSR": {"province": "江西省", "sys_city": "上饶", "airport_name": "上饶"},
-    "ZSSS": {"province": "上海", "sys_city": "上海", "airport_name": "虹桥"},
-    "ZSTX": {"province": "安徽省", "sys_city": "黄山", "airport_name": "屯溪"},
-    "ZSWA": {"province": "安徽省", "sys_city": "芜湖", "airport_name": "芜湖"},
-    "ZSWF": {"province": "山东省", "sys_city": "潍坊", "airport_name": "潍坊"},
-    "ZSWH": {"province": "山东省", "sys_city": "威海", "airport_name": "威海"},
-    "ZSWX": {"province": "江苏省", "sys_city": "无锡", "airport_name": "硕放"},
-    "ZSWY": {"province": "福建省", "sys_city": "南平", "airport_name": "武夷山"},
-    "ZSWZ": {"province": "浙江省", "sys_city": "温州", "airport_name": "龙湾"},
-    "ZSXZ": {"province": "江苏省", "sys_city": "徐州", "airport_name": "观音"},
-    "ZSYA": {"province": "江苏省", "sys_city": "扬州", "airport_name": "泰州"},
-    "ZSYC": {"province": "江西省", "sys_city": "宜春", "airport_name": "明月山"},
-    "ZSYN": {"province": "江苏省", "sys_city": "盐城", "airport_name": "南洋"},
-    "ZSYT": {"province": "山东省", "sys_city": "烟台", "airport_name": "蓬莱"},
-    "ZSYW": {"province": "浙江省", "sys_city": "金华", "airport_name": "义乌"},
-    "ZSZS": {"province": "浙江省", "sys_city": "舟山", "airport_name": "普陀山"},
-    "ZUAL": {"province": "西藏自治区", "sys_city": "阿里", "airport_name": "昆莎"},
-    "ZUAS": {"province": "贵州省", "sys_city": "安顺", "airport_name": "黄果树"},
-    "ZUBD": {"province": "西藏自治区", "sys_city": "昌都", "airport_name": "邦达"},
-    "ZUBJ": {"province": "贵州省", "sys_city": "毕节", "airport_name": "飞雄"},
-    "ZUBZ": {"province": "四川省", "sys_city": "巴中", "airport_name": "恩阳"},
-    "ZUCK": {"province": "重庆", "sys_city": "重庆", "airport_name": "江北"},
-    "ZUDA": {"province": "四川省", "sys_city": "达州", "airport_name": "金垭"},
-    "ZUDC": {"province": "四川省", "sys_city": "甘孜", "airport_name": "稻城"},
-    "ZUDJ": {"province": "贵州省", "sys_city": "铜仁", "airport_name": "德江"},
-    "ZUDR": {"province": "西藏自治区", "sys_city": "日喀则", "airport_name": "定日"},
-    "ZUGH": {"province": "四川省", "sys_city": "德阳", "airport_name": "广汉"},
-    "ZUGU": {"province": "四川省", "sys_city": "广元", "airport_name": "盘龙"},
-    "ZUGY": {"province": "贵州省", "sys_city": "贵阳", "airport_name": "龙洞堡"},
-    "ZUGZ": {"province": "四川省", "sys_city": "甘孜", "airport_name": "格萨尔"},
-    "ZUHY": {"province": "四川省", "sys_city": "阿坝", "airport_name": "红原"},
-    "ZUJZ": {"province": "四川省", "sys_city": "阿坝", "airport_name": "九寨"},
-    "ZUKD": {"province": "四川省", "sys_city": "甘孜", "airport_name": "康定"},
-    "ZUKJ": {"province": "贵州省", "sys_city": "黔东南", "airport_name": "黄平"},
-    "ZULA": {"province": "四川省", "sys_city": "南充", "airport_name": "阆中"},
-    "ZULB": {"province": "贵州省", "sys_city": "黔南", "airport_name": "荔波"},
-    "ZULF": {"province": "四川省", "sys_city": "乐山", "airport_name": "乐山"},
-    "ZULS": {"province": "西藏自治区", "sys_city": "拉萨", "airport_name": "贡嘎"},
-    "ZULZ": {"province": "四川省", "sys_city": "泸州", "airport_name": "云龙"},
-    "ZUMT": {"province": "贵州省", "sys_city": "遵义", "airport_name": "茅台"},
-    "ZUMY": {"province": "四川省", "sys_city": "绵阳", "airport_name": "南郊"},
-    "ZUNC": {"province": "四川省", "sys_city": "南充", "airport_name": "高坪"},
-    "ZUNP": {"province": "贵州省", "sys_city": "黔东南", "airport_name": "黎平"},
-    "ZUNZ": {"province": "西藏自治区", "sys_city": "林芝", "airport_name": "米林"},
-    "ZUPL": {"province": "西藏自治区", "sys_city": "阿里", "airport_name": "普兰"},
-    "ZUPS": {"province": "贵州省", "sys_city": "六盘水", "airport_name": "月照"},
-    "ZUQJ": {"province": "重庆", "sys_city": "重庆", "airport_name": "黔江"},
-    "ZURK": {"province": "西藏自治区", "sys_city": "日喀则", "airport_name": "和平"},
-    "ZUSH": {"province": "西藏自治区", "sys_city": "山南", "airport_name": "隆子"},
-    "ZUTF": {"province": "四川省", "sys_city": "成都", "airport_name": "天府"},
-    "ZUTR": {"province": "贵州省", "sys_city": "铜仁", "airport_name": "凤凰"},
-    "ZUUU": {"province": "四川省", "sys_city": "成都", "airport_name": "双流"},
-    "ZUWL": {"province": "重庆", "sys_city": "重庆", "airport_name": "仙女山"},
-    "ZUWS": {"province": "重庆", "sys_city": "重庆", "airport_name": "巫山"},
-    "ZUWX": {"province": "重庆", "sys_city": "重庆", "airport_name": "万州"},
-    "ZUXC": {"province": "四川省", "sys_city": "凉山", "airport_name": "西昌"},
-    "ZUXJ": {"province": "四川省", "sys_city": "成都", "airport_name": "新津"},
-    "ZUYB": {"province": "四川省", "sys_city": "宜宾", "airport_name": "五粮液"},
-    "ZUYI": {"province": "贵州省", "sys_city": "黔西南", "airport_name": "兴义"},
-    "ZUZH": {"province": "四川省", "sys_city": "攀枝花", "airport_name": "保安营"},
-    "ZUZY": {"province": "贵州省", "sys_city": "遵义", "airport_name": "新舟"},
-    "ZWAK": {"province": "新疆维吾尔自治区", "sys_city": "阿克苏", "airport_name": "阿克苏"},
-    "ZWAL": {"province": "新疆维吾尔自治区", "sys_city": "阿拉尔", "airport_name": "阿拉尔"},
-    "ZWAT": {"province": "新疆维吾尔自治区", "sys_city": "阿勒泰", "airport_name": "阿勒泰"},
-    "ZWBL": {"province": "新疆维吾尔自治区", "sys_city": "博尔塔拉", "airport_name": "博乐"},
-    "ZWCM": {"province": "新疆维吾尔自治区", "sys_city": "巴音郭楞", "airport_name": "且末"},
-    "ZWFY": {"province": "新疆维吾尔自治区", "sys_city": "阿勒泰", "airport_name": "富蕴"}, # 完美解决富蕴问题
-    "ZWHJ": {"province": "新疆维吾尔自治区", "sys_city": "巴音郭楞", "airport_name": "和静"},
-    "ZWHM": {"province": "新疆维吾尔自治区", "sys_city": "哈密", "airport_name": "哈密"},
-    "ZWHZ": {"province": "新疆维吾尔自治区", "sys_city": "石河子", "airport_name": "石河子"},
-    "ZWKC": {"province": "新疆维吾尔自治区", "sys_city": "阿克苏", "airport_name": "库车"},
-    "ZWKL": {"province": "新疆维吾尔自治区", "sys_city": "巴音郭楞", "airport_name": "库尔勒"},
-    "ZWKM": {"province": "新疆维吾尔自治区", "sys_city": "克拉玛依", "airport_name": "克拉玛依"},
-    "ZWKN": {"province": "新疆维吾尔自治区", "sys_city": "阿勒泰", "airport_name": "布尔津"},
-    "ZWLK": {"province": "新疆维吾尔自治区", "sys_city": "哈密", "airport_name": "巴里坤"},
-    "ZWLT": {"province": "新疆维吾尔自治区", "sys_city": "巴音郭楞", "airport_name": "轮台"},
-    "ZWNL": {"province": "新疆维吾尔自治区", "sys_city": "伊犁", "airport_name": "新源"},
-    "ZWQT": {"province": "新疆维吾尔自治区", "sys_city": "昌吉", "airport_name": "奇台"},
-    "ZWRQ": {"province": "新疆维吾尔自治区", "sys_city": "巴音郭楞", "airport_name": "若羌"},
-    "ZWSC": {"province": "新疆维吾尔自治区", "sys_city": "喀什", "airport_name": "莎车"},
-    "ZWSH": {"province": "新疆维吾尔自治区", "sys_city": "喀什", "airport_name": "喀什"},
-    "ZWTC": {"province": "新疆维吾尔自治区", "sys_city": "塔城", "airport_name": "塔城"},
-    "ZWTK": {"province": "新疆维吾尔自治区", "sys_city": "喀什", "airport_name": "塔什库尔干"},
-    "ZWTL": {"province": "新疆维吾尔自治区", "sys_city": "吐鲁番", "airport_name": "吐鲁番"},
-    "ZWTN": {"province": "新疆维吾尔自治区", "sys_city": "和田", "airport_name": "和田"},
-    "ZWTS": {"province": "新疆维吾尔自治区", "sys_city": "图木舒克", "airport_name": "图木舒克"},
-    "ZWWW": {"province": "新疆维吾尔自治区", "sys_city": "乌鲁木齐", "airport_name": "乌鲁木齐"},
-    "ZWYN": {"province": "新疆维吾尔自治区", "sys_city": "伊犁", "airport_name": "伊宁"},
-    "ZWYT": {"province": "新疆维吾尔自治区", "sys_city": "和田", "airport_name": "于田"},
-    "ZWZS": {"province": "新疆维吾尔自治区", "sys_city": "伊犁", "airport_name": "昭苏"},
-    "ZYAS": {"province": "辽宁省", "sys_city": "鞍山", "airport_name": "鞍山"},
-    "ZYBA": {"province": "吉林省", "sys_city": "白城", "airport_name": "白城"},
-    "ZYBS": {"province": "吉林省", "sys_city": "白山", "airport_name": "长白山"},
-    "ZYCC": {"province": "吉林省", "sys_city": "长春", "airport_name": "龙嘉"},
-    "ZYCH": {"province": "辽宁省", "sys_city": "大连", "airport_name": "长海"},
-    "ZYCY": {"province": "辽宁省", "sys_city": "朝阳", "airport_name": "朝阳"},
-    "ZYDD": {"province": "辽宁省", "sys_city": "丹东", "airport_name": "丹东"},
-    "ZYDQ": {"province": "黑龙江省", "sys_city": "大庆", "airport_name": "大庆"},
-    "ZYDU": {"province": "黑龙江省", "sys_city": "黑河", "airport_name": "五大连池"},
-    "ZYFY": {"province": "黑龙江省", "sys_city": "佳木斯", "airport_name": "抚远"},
-    "ZYHB": {"province": "黑龙江省", "sys_city": "哈尔滨", "airport_name": "太平"},
-    "ZYHE": {"province": "黑龙江省", "sys_city": "黑河", "airport_name": "黑河"},
-    "ZYJD": {"province": "黑龙江省", "sys_city": "大兴安岭", "airport_name": "鄂伦春"},
-    "ZYJM": {"province": "黑龙江省", "sys_city": "佳木斯", "airport_name": "佳木斯"},
-    "ZYJS": {"province": "黑龙江省", "sys_city": "佳木斯", "airport_name": "建三江"},
-    "ZYJX": {"province": "黑龙江省", "sys_city": "鸡西", "airport_name": "鸡西"},
-    "ZYJZ": {"province": "辽宁省", "sys_city": "锦州", "airport_name": "锦州"},
-    "ZYLD": {"province": "黑龙江省", "sys_city": "伊春", "airport_name": "伊春"},
-    "ZYMD": {"province": "黑龙江省", "sys_city": "牡丹江", "airport_name": "牡丹江"},
-    "ZYMH": {"province": "黑龙江省", "sys_city": "大兴安岭", "airport_name": "漠河"},
-    "ZYQQ": {"province": "黑龙江省", "sys_city": "齐齐哈尔", "airport_name": "齐齐哈尔"},
-    "ZYSD": {"province": "黑龙江省", "sys_city": "牡丹江", "airport_name": "绥芬河"},
-    "ZYSQ": {"province": "吉林省", "sys_city": "松原", "airport_name": "松原"},
-    "ZYTL": {"province": "辽宁省", "sys_city": "大连", "airport_name": "大连"},
-    "ZYTN": {"province": "吉林省", "sys_city": "通化", "airport_name": "通化"},
-    "ZYTX": {"province": "辽宁省", "sys_city": "沈阳", "airport_name": "桃仙"},
-    "ZYYJ": {"province": "吉林省", "sys_city": "延边", "airport_name": "延吉"},
-    "ZYYK": {"province": "辽宁省", "sys_city": "营口", "airport_name": "营口"},
+COUNTRIES = [
+    "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
+    "柬埔寨", "缅甸", "泰国", "马来西亚", "文莱", "新加坡", "印度尼西亚", "东帝汶",
+    "尼泊尔", "不丹", "孟加拉国", "印度", "巴基斯坦", "斯里兰卡", "马尔代夫",
+    "哈萨克斯坦", "吉尔吉斯斯坦", "塔吉克斯坦", "乌兹别克斯坦", "土库曼斯坦",
+    "阿富汗", "伊拉克", "伊朗", "叙利亚", "约旦", "黎巴嫩", "以色列", "巴勒斯坦",
+    "沙特阿拉伯", "巴林", "卡塔尔", "科威特", "阿联酋", "阿曼", "也门", "格鲁吉亚",
+    "亚美尼亚", "阿塞拜疆", "土耳其", "塞浦路斯", "芬兰", "瑞典", "挪威", "冰岛",
+    "丹麦", "法罗群岛（丹）", "爱沙尼亚", "拉脱维亚", "立陶宛", "白俄罗斯", "俄罗斯",
+    "乌克兰", "摩尔多瓦", "波兰", "捷克", "斯洛伐克", "匈牙利", "德国", "奥地利",
+    "瑞士", "列支敦士登", "英国", "爱尔兰", "荷兰", "比利时", "卢森堡", "法国",
+    "摩纳哥", "罗马尼亚", "保加利亚", "塞尔维亚", "马其顿", "阿尔巴尼亚", "希腊",
+    "斯洛文尼亚", "克罗地亚", "波斯尼亚和墨塞哥维那", "意大利", "梵蒂冈", "圣马力诺",
+    "马耳他", "西班牙", "葡萄牙", "安道尔", "埃及", "利比亚", "苏丹", "突尼斯",
+    "阿尔及利亚", "摩洛哥", "亚速尔群岛（葡）", "马德拉群岛（葡）", "埃塞俄比亚",
+    "厄立特里亚", "索马里", "吉布提", "肯尼亚", "坦桑尼亚", "乌干达", "卢旺达",
+    "布隆迪", "塞舌尔", "乍得", "中非", "喀麦隆", "赤道几内亚", "加蓬", "刚果（布）",
+    "刚果（金）", "圣多美及普林西比", "毛里塔尼亚", "西撒哈拉", "塞内加尔", "冈比亚",
+    "马里", "布基纳法索", "几内亚", "几内亚比绍", "佛得角", "塞拉利昂", "利比里亚",
+    "科特迪瓦", "加纳", "多哥", "贝宁", "尼日尔", "加那利群岛（西）", "赞比亚",
+    "安哥拉", "津巴布韦", "马拉维", "莫桑比克", "博茨瓦纳", "纳米比亚", "南非",
+    "斯威士兰", "莱索托", "马达加斯加", "科摩罗", "毛里求斯", "留尼旺（法）",
+    "圣赫勒拿（英）", "澳大利亚", "新西兰", "巴布亚新几内亚", "所罗门群岛",
+    "瓦努阿图", "密克罗尼西亚", "马绍尔群岛", "帕劳", "瑙鲁", "基里巴斯", "图瓦卢",
+    "萨摩亚", "斐济群岛", "汤加", "库克群岛（新）", "关岛（美）", "新喀里多尼亚（法）",
+    "法属波利尼西亚", "皮特凯恩岛（英）", "瓦利斯与富图纳（法）", "纽埃（新）",
+    "托克劳（新）", "美属萨摩亚", "北马里亚纳（美）", "加拿大", "美国", "墨西哥",
+    "格陵兰（丹）", "危地马拉", "伯利兹", "萨尔瓦多", "洪都拉斯", "尼加拉瓜",
+    "哥斯达黎加", "巴拿马", "巴哈马", "古巴", "牙买加", "海地", "多米尼加共和国",
+    "安提瓜和巴布达", "圣基茨和尼维斯", "多米尼克", "圣卢西亚", "圣文森特和格林纳丁斯",
+    "格林纳达", "巴巴多斯", "特立尼达和多巴哥", "波多黎各（美）", "英属维尔京群岛",
+    "美属维尔京群岛", "安圭拉（英）", "蒙特塞拉特（英）", "瓜德罗普（法）",
+    "马提尼克（法）", "荷属安的列斯", "阿鲁巴（荷）", "特克斯和凯科斯群岛（英）",
+    "开曼群岛（英）", "百慕大（英）", "哥伦比亚", "委内瑞拉", "圭亚那", "法属圭亚那",
+    "苏里南", "厄瓜多尔", "秘鲁", "玻利维亚", "智利", "阿根廷", "乌拉圭", "巴拉圭",
+    "其他"
+]
+
+ABBR_TO_COUNTRY = {
+    "印尼": "印度尼西亚", "台北": "台湾", "高雄": "台湾", "台中": "台湾", 
+    "花莲": "台湾", "台东": "台湾", "嘉义": "台湾", "台南": "台湾",
 }
 
-DOMESTIC_KEYWORDS = list(set([v["sys_city"] for v in DOMESTIC_ICAO_MAP.values()]))
+TAIWAN_CITIES = [
+    "台北松山", "台北桃园", "高雄小港", "台中清泉岗", "花莲", "台东", "嘉义", "台南", "马公", "金门", "马祖"
+]
 
-# 前端下拉框联动时，第三级需要匹配的区县详情
-CITY_DETAIL_MAP = {
-    "北京": {"province": "北京", "district": "顺义区"}, 
-    "天津": {"province": "天津", "district": "滨海新区"}, 
-    "上海": {"province": "上海", "district": "闵行区"},
-    "重庆": {"province": "重庆", "district": "江北区"},
-    "乌鲁木齐": {"province": "新疆维吾尔自治区", "district": "乌鲁木齐"}, 
-    "伊犁": {"province": "新疆维吾尔自治区", "district": "伊犁"},
+CITY_TO_PROVINCE = {
+    "北京": "北京", "上海": "上海", "天津": "天津", "重庆": "重庆",
+    "广州": "广东", "深圳": "广东", "珠海": "广东", "汕头": "广东", "佛山": "广东", "江门": "广东",
+    "湛江": "广东", "茂名": "广东", "肇庆": "广东", "惠州": "广东", "梅州": "广东", "汕尾": "广东",
+    "河源": "广东", "阳江": "广东", "清远": "广东", "东莞": "广东", "中山": "广东", "潮州": "广东",
+    "揭阳": "广东", "云浮": "广东",
+    "南京": "江苏", "无锡": "江苏", "徐州": "江苏", "常州": "江苏", "苏州": "江苏", "南通": "江苏",
+    "连云港": "江苏", "淮安": "江苏", "盐城": "江苏", "扬州": "江苏", "镇江": "江苏", "泰州": "江苏",
+    "宿迁": "江苏",
+    "杭州": "浙江", "宁波": "浙江", "温州": "浙江", "嘉兴": "浙江", "湖州": "浙江", "绍兴": "浙江",
+    "金华": "浙江", "衢州": "浙江", "舟山": "浙江", "台州": "浙江", "丽水": "浙江",
+    "合肥": "安徽", "芜湖": "安徽", "蚌埠": "安徽", "淮南": "安徽", "马鞍山": "安徽", "淮北": "安徽",
+    "铜陵": "安徽", "安庆": "安徽", "黄山": "安徽", "滁州": "安徽", "阜阳": "安徽", "宿州": "安徽",
+    "六安": "安徽", "亳州": "安徽", "池州": "安徽", "宣城": "安徽",
+    "福州": "福建", "厦门": "福建", "莆田": "福建", "三明": "福建", "泉州": "福建", "漳州": "福建",
+    "南平": "福建", "龙岩": "福建", "宁德": "福建",
+    "南昌": "江西", "景德镇": "江西", "萍乡": "江西", "九江": "江西", "新余": "江西", "鹰潭": "江西",
+    "赣州": "江西", "吉安": "江西", "宜春": "江西", "抚州": "江西", "上饶": "江西",
+    "济南": "山东", "青岛": "山东", "淄博": "山东", "枣庄": "山东", "东营": "山东", "烟台": "山东",
+    "潍坊": "山东", "济宁": "山东", "泰安": "山东", "威海": "山东", "日照": "山东", "临沂": "山东",
+    "德州": "山东", "聊城": "山东", "滨州": "山东", "菏泽": "山东",
+    "郑州": "河南", "开封": "河南", "洛阳": "河南", "平顶山": "河南", "安阳": "河南", "鹤壁": "河南",
+    "新乡": "河南", "焦作": "河南", "濮阳": "河南", "许昌": "河南", "漯河": "河南", "三门峡": "河南",
+    "南阳": "河南", "商丘": "河南", "信阳": "河南", "周口": "河南", "驻马店": "河南",
+    "武汉": "湖北", "黄石": "湖北", "十堰": "湖北", "宜昌": "湖北", "襄阳": "湖北", "鄂州": "湖北",
+    "荆门": "湖北", "孝感": "湖北", "荆州": "湖北", "黄冈": "湖北", "咸宁": "湖北", "随州": "湖北",
+    "长沙": "湖南", "株洲": "湖南", "湘潭": "湖南", "衡阳": "湖南", "邵阳": "湖南", "岳阳": "湖南",
+    "常德": "湖南", "张家界": "湖南", "益阳": "湖南", "郴州": "湖南", "永州": "湖南", "怀化": "湖南",
+    "娄底": "湖南",
+    "成都": "四川", "自贡": "四川", "攀枝花": "四川", "泸州": "四川", "德阳": "四川", "绵阳": "四川",
+    "广元": "四川", "遂宁": "四川", "内江": "四川", "乐山": "四川", "南充": "四川", "眉山": "四川",
+    "宜宾": "四川", "广安": "四川", "达州": "四川", "雅安": "四川", "巴中": "四川", "资阳": "四川",
+    "贵阳": "贵州", "六盘水": "贵州", "遵义": "贵州", "安顺": "贵州", "毕节": "贵州", "铜仁": "贵州",
+    "昆明": "云南", "曲靖": "云南", "玉溪": "云南", "保山": "云南", "昭通": "云南", "丽江": "云南",
+    "普洱": "云南", "临沧": "云南",
+    "西安": "陕西", "铜川": "陕西", "宝鸡": "陕西", "咸阳": "陕西", "渭南": "陕西", "延安": "陕西",
+    "汉中": "陕西", "榆林": "陕西", "安康": "陕西", "商洛": "陕西",
+    "兰州": "甘肃", "嘉峪关": "甘肃", "金昌": "甘肃", "白银": "甘肃", "天水": "甘肃", "武威": "甘肃",
+    "张掖": "甘肃", "平凉": "甘肃", "酒泉": "甘肃", "庆阳": "甘肃", "定西": "甘肃", "陇南": "甘肃",
+    "西宁": "青海", "海东": "青海",
+    "银川": "宁夏", "石嘴山": "宁夏", "吴忠": "宁夏", "固原": "宁夏", "中卫": "宁夏",
+    "乌鲁木齐": "新疆", "克拉玛依": "新疆", "吐鲁番": "新疆", "哈密": "新疆",
+    "伊犁": "新疆", "伊犁伊宁": "新疆",
+    "拉萨": "西藏", "日喀则": "西藏", "昌都": "西藏", "林芝": "西藏", "山南": "西藏", "那曲": "西藏",
+    "呼和浩特": "内蒙古", "包头": "内蒙古", "乌海": "内蒙古", "赤峰": "内蒙古", "通辽": "内蒙古",
+    "鄂尔多斯": "内蒙古", "呼伦贝尔": "内蒙古", "巴彦淖尔": "内蒙古", "乌兰察布": "内蒙古",
+    "南宁": "广西", "柳州": "广西", "桂林": "广西", "梧州": "广西", "北海": "广西", "防城港": "广西",
+    "钦州": "广西", "贵港": "广西", "玉林": "广西", "百色": "广西", "贺州": "广西", "河池": "广西",
+    "来宾": "广西", "崇左": "广西",
+    "海口": "海南", "三亚": "海南", "三沙": "海南", "儋州": "海南",
+    "石家庄": "河北", "唐山": "河北", "秦皇岛": "河北", "邯郸": "河北", "邢台": "河北", "保定": "河北",
+    "张家口": "河北", "承德": "河北", "沧州": "河北", "廊坊": "河北", "衡水": "河北",
+    "太原": "山西", "大同": "山西", "阳泉": "山西", "长治": "山西", "晋城": "山西", "朔州": "山西",
+    "晋中": "山西", "运城": "山西", "忻州": "山西", "临汾": "山西", "吕梁": "山西",
+    "沈阳": "辽宁", "大连": "辽宁", "鞍山": "辽宁", "抚顺": "辽宁", "本溪": "辽宁", "丹东": "辽宁",
+    "锦州": "辽宁", "营口": "辽宁", "阜新": "辽宁", "辽阳": "辽宁", "盘锦": "辽宁", "铁岭": "辽宁",
+    "朝阳": "辽宁", "葫芦岛": "辽宁",
+    "长春": "吉林", "吉林": "吉林", "四平": "吉林", "辽源": "吉林", "通化": "吉林", "白山": "吉林",
+    "松原": "吉林", "白城": "吉林",
+    "哈尔滨": "黑龙江", "齐齐哈尔": "黑龙江", "鸡西": "黑龙江", "鹤岗": "黑龙江", "双鸭山": "黑龙江",
+    "大庆": "黑龙江", "伊春": "黑龙江", "佳木斯": "黑龙江", "七台河": "黑龙江", "牡丹江": "黑龙江",
+    "黑河": "黑龙江", "绥化": "黑龙江",
 }
 
-# 将四字码的省市映射自动补充到详细映射中
-for k, v in DOMESTIC_ICAO_MAP.items():
-    CITY_DETAIL_MAP[v["sys_city"]] = {"province": v["province"], "district": v["sys_city"]}
+DOMESTIC_KEYWORDS = list(CITY_TO_PROVINCE.keys())
+
+DEFAULT_DETAIL_MAP = {
+    "北京首都": {"province": "北京", "district": "顺义区"},
+    "北京大兴": {"province": "北京", "district": "大兴区"},
+    "天津滨海": {"province": "天津", "district": "滨海新区"},
+    "上海虹桥": {"province": "上海", "district": "闵行区"},
+    "上海浦东": {"province": "上海", "district": "浦东新区"},
+    "重庆江北": {"province": "重庆", "district": "江北区"},
+    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"},
+    "伊犁伊宁": {"province": "新疆", "district": "伊犁"},
+}
+
+def parse_flight_time(time_str):
+    try:
+        parts = time_str.split(':')
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        return hours, minutes
+    except:
+        return 0, 0
 
 def extract_country(city_name):
-    return city_name.split()[0] if city_name.split() else city_name
+    if city_name.startswith("印尼"):
+        return "印度尼西亚"
+    parts = re.split(r'[\s\-]', city_name)
+    if parts:
+        first_part = parts[0]
+        if first_part in ABBR_TO_COUNTRY:
+            return ABBR_TO_COUNTRY[first_part]
+    for tw_city in TAIWAN_CITIES:
+        if tw_city in city_name:
+            return "台湾"
+    for country in COUNTRIES:
+        if country in city_name:
+            return country
+    if parts:
+        return parts[0]
+    return city_name
 
 def get_province_from_city(city):
+    for keyword, province in CITY_TO_PROVINCE.items():
+        if keyword in city:
+            return province
     return city.split()[0] if city.split() else city
 
 def extract_district_from_city(city):
-    return city.split()[0] if city.split() else city
+    for keyword in CITY_TO_PROVINCE.keys():
+        if keyword in city:
+            return keyword
+    district = city.split()[0] if city.split() else city
+    if district.endswith('机场'):
+        district = district[:-2]
+    return district
 
 def build_city_mappings(df, custom_detail_map):
     cities = set()
     for _, row in df.iterrows():
-        dep = str(row["出发城市"]).strip().split('/')[0]
-        arr = str(row["到达城市"]).strip().split('/')[0]
+        dep = str(row["出发城市"]).strip()
+        arr = str(row["到达城市"]).strip()
         cities.add(dep)
         cities.add(arr)
 
-    detail_map = {**CITY_DETAIL_MAP, **custom_detail_map}
+    detail_map = {**DEFAULT_DETAIL_MAP, **custom_detail_map}
     city_map = {}
 
     for city in cities:
+        if any(tw in city for tw in TAIWAN_CITIES):
+            city_map[city] = "台湾"
+            continue
+
         if city in detail_map:
             province = detail_map[city]["province"]
             city_map[city] = province
@@ -1374,7 +1239,7 @@ def build_city_mappings(df, custom_detail_map):
     return city_map, detail_map
 
 
-def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json, icao_map_json):
+def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json):
     return f"""
 // ================= 公共辅助函数（基础脚本） =================
 // 生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1421,7 +1286,7 @@ function setDateInput(inputEl, dateStr) {{
     return true;
 }}
 
-// ====== 智能匹配下拉框选项（极度宽容，兼容带省字和不带省字） ======
+// ====== 智能匹配下拉框选项 ======
 async function setSelectValue(selectEl, valueText) {{
     if (!selectEl) return false;
     let bestIndex = -1;
@@ -1430,27 +1295,31 @@ async function setSelectValue(selectEl, valueText) {{
 
     for (let i = 0; i < selectEl.options.length; i++) {{
         const optText = selectEl.options[i].text.trim();
-        if (!optText || optText === "请选择" || optText === "--请选择--" || optText === "其它") continue;
+        if (!optText || optText === "请选择" || optText === "其它") continue;
 
         let score = -1;
-        // 高度防呆：去掉所有的“省、市、自治区、维吾尔、壮族、回族”等进行匹配
-        const cleanOpt = optText.replace(/(省|市|自治区|维吾尔|壮族|回族|特别行政区)/g, '');
-        const cleanTarget = target.replace(/(省|市|自治区|维吾尔|壮族|回族|特别行政区)/g, '');
 
-        if (optText === target || cleanOpt === cleanTarget) {{
+        // 1. 完全一致，最高分
+        if (optText === target) {{
             score = 1000;
-        }} else if (optText === target + "机场") {{
+        }} 
+        // 2. 完全等于 target + "机场"
+        else if (optText === target + "机场") {{
             score = 900;
-        }} else if (optText.includes(target) || cleanOpt.includes(cleanTarget)) {{
-            score = 500 - Math.abs(optText.length - target.length);
+        }} 
+        // 3. 包含 target
+        else if (optText.includes(target)) {{
+            score = 100 - (optText.length - target.length);
             if (optText.includes("直升机场") || optText.includes("通用机场")) {{
                 score -= 200;
             }}
             if (optText.includes("机场")) {{
                 score += 50;
             }}
-        }} else if (target.includes(optText) || cleanTarget.includes(cleanOpt)) {{
-            score = 300 - Math.abs(target.length - optText.length);
+        }} 
+        // 4. target 包含 optText
+        else if (target.includes(optText)) {{
+            score = 50 - (target.length - optText.length);
             if (optText.includes("直升") || optText.includes("通用")) {{
                 score -= 200;
             }}
@@ -1463,15 +1332,10 @@ async function setSelectValue(selectEl, valueText) {{
     }}
 
     if (bestIndex !== -1 && bestScore > -50) {{
-        const bestText = selectEl.options[bestIndex].text.trim();
-        if (bestText === "请选择" || bestText === "--请选择--") {{
-            console.warn(`⚠️ 智能匹配失败，未能找到合适选项 (目标: ${{target}})`);
-            return false;
-        }}
         selectEl.selectedIndex = bestIndex;
         selectEl.dispatchEvent(new Event('change', {{ bubbles: true }}));
         await sleep(300);
-        console.log(`✅ 已选择 "${{bestText}}" (目标: ${{target}})`);
+        console.log(`✅ 已选择 "${{selectEl.options[bestIndex].text}}" (目标: ${{target}})`);
         return true;
     }}
     
@@ -1496,39 +1360,40 @@ function setNumberInput(inputEl, value) {{
 const CITY_MAP_RAW = {city_map_json};
 const CITY_MAP_CORRECTED = {{
     ...CITY_MAP_RAW,
-    "印尼雅加达哈林": "印度尼西亚", "印尼巴厘岛": "印度尼西亚",
-    "台北松山": "台湾", "台北桃园": "台湾", "高雄小港": "台湾", "台中清泉岗": "台湾", "花莲": "台湾", "台东": "台湾", "嘉义": "台湾", "台南": "台湾", "马公": "台湾", "金门": "台湾", "马祖": "台湾"
+    "印尼雅加达哈林": "印度尼西亚",
+    "印尼巴厘岛": "印度尼西亚",
+    "台北松山": "台湾",
+    "台北桃园": "台湾",
+    "高雄小港": "台湾",
+    "台中清泉岗": "台湾",
+    "花莲": "台湾",
+    "台东": "台湾",
+    "嘉义": "台湾",
+    "台南": "台湾",
+    "马公": "台湾",
+    "金门": "台湾",
+    "马祖": "台湾"
 }};
 const CITY_MAP = CITY_MAP_CORRECTED;
 const DOMESTIC_KEYWORDS = {domestic_keywords_json};
-const DOMESTIC_ICAO_MAP = {icao_map_json};
 
 function getLocationInfo(city) {{
-    let cleanCity = city.split('/')[0].trim();
-    
-    if (cleanCity.length === 4 && /^[A-Z]+$/.test(cleanCity)) {{
-        if (DOMESTIC_ICAO_MAP[cleanCity]) {{
-            return {{ zone: "境内", region: DOMESTIC_ICAO_MAP[cleanCity].province }};
-        }}
-        return {{ zone: "境外", region: "未知境外" }};
-    }}
-
-    const isDomestic = DOMESTIC_KEYWORDS.some(keyword => cleanCity.includes(keyword));
+    const isDomestic = DOMESTIC_KEYWORDS.some(keyword => city.includes(keyword));
     if (isDomestic) {{
-        let region = CITY_MAP[cleanCity];
-        if (!region) {{ const match = cleanCity.match(/^([^\\s\\-]+)/); region = match ? match[1] : cleanCity; }}
+        let region = CITY_MAP[city];
+        if (!region) {{ const match = city.match(/^([^\\s\\-]+)/); region = match ? match[1] : city; }}
         return {{ zone: "境内", region: region }};
     }} else {{
-        let country = CITY_MAP[cleanCity];
+        let country = CITY_MAP[city];
         if (!country) {{
-            const parts = cleanCity.split(/[\\s\\-]/);
+            const parts = city.split(/[\\s\\-]/);
             if (parts.length > 0) {{
                 const first = parts[0];
                 if (first === "印尼") country = "印度尼西亚";
                 else if (["台北","高雄","台中","花莲","台东","嘉义","台南"].includes(first)) country = "台湾";
                 else country = first;
             }} else {{
-                country = cleanCity;
+                country = city;
             }}
         }}
         return {{ zone: "境外", region: country }};
@@ -1544,18 +1409,16 @@ async function fillSegmentSelects(container, city) {{
         return false;
     }}
     
-    const cleanCity = city.split('/')[0].trim();
-    const info = getLocationInfo(cleanCity);
-    
+    const info = getLocationInfo(city);
     if (info.zone === "境外") {{
         await setSelectValue(selects[0], info.zone);
         await setSelectValue(selects[1], info.region);
         return true;
     }}
     
-    const detail = CITY_DETAIL_MAP[cleanCity] || CITY_DETAIL_MAP[city];
+    const detail = CITY_DETAIL_MAP[city];
     if (!detail) {{
-        console.warn(`未找到城市 ${{cleanCity}} 的详细映射，将使用降级处理`);
+        console.warn(`未找到城市 ${{city}} 的详细映射，将使用降级处理`);
         await setSelectValue(selects[0], "境内");
         await setSelectValue(selects[1], info.region);
         if (selects.length >= 3) {{
@@ -1763,25 +1626,24 @@ async function handleAirportBlock(blockIndex, city, label) {{
     const secondSelect = await waitForElement(secondSelectXPath, 10000);
     if (!secondSelect) {{ console.error(`❌ 未找到 ${{label}} 第二个选择框`); return false; }}
     
-    const cleanCity = city.split('/')[0].trim();
-    const info = getLocationInfo(cleanCity);
+    const info = getLocationInfo(city);
     if (info.zone === "境内") {{
-        console.log(`🛬 ${{label}} 境内机场: ${{cleanCity}}，尝试选择匹配的机场...`);
-        let selected = await setSelectValue(secondSelect, cleanCity);
+        console.log(`🛬 ${{label}} 境内机场: ${{city}}，尝试选择匹配的机场...`);
+        let selected = await setSelectValue(secondSelect, city);
         if (!selected) {{
-            const detail = CITY_DETAIL_MAP[cleanCity];
+            const detail = CITY_DETAIL_MAP[city];
             if (detail && detail.district) {{
                 console.log(`尝试使用区县名 "${{detail.district}}" 进行匹配...`);
                 selected = await setSelectValue(secondSelect, detail.district);
             }}
         }}
         if (!selected) {{
-            console.error(`❌ 未找到匹配的机场选项 (尝试了 "${{cleanCity}}" 和区县名)`);
+            console.error(`❌ 未找到匹配的机场选项 (尝试了 "${{city}}" 和区县名)`);
             return false;
         }}
         return true;
     }} else {{
-        console.log(`🛫 ${{label}} 境外机场: ${{cleanCity}}，选择“其它”...`);
+        console.log(`🛫 ${{label}} 境外机场: ${{city}}，选择“其它”...`);
         const otherSelected = await setSelectValue(secondSelect, '其它');
         if (!otherSelected) {{ console.error(`❌ 无法选择“其它”`); return false; }}
         await sleep(800);
@@ -1801,7 +1663,7 @@ async function handleAirportBlock(blockIndex, city, label) {{
         if (zoneSelect2) await setSelectValue(zoneSelect2, '境外');
         const airportNameInput = await waitForElement(airportNameInputXPath, 10000);
         if (airportNameInput) {{
-            const airportName = getAirportNameFromCity(cleanCity);
+            const airportName = getAirportNameFromCity(city);
             console.log(`📝 填入 ${{label}} 机场名称: ${{airportName}}`);
             setNumberInput(airportNameInput, airportName);
         }}
@@ -1881,7 +1743,7 @@ async function ensureListPage() {{
 }}
 """
 
-def generate_daily_script(records, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json):
+def generate_daily_script(records, city_map_json, detail_map_json, domestic_keywords_json):
     js_data = json.dumps(records, ensure_ascii=False, indent=4)
     script = f"""
 // ================= 自动生成的飞行计划脚本（当日计划专用） =================
@@ -1940,8 +1802,8 @@ async function tryMatchPlan(plan) {{
     if (!rows) return null;
     const regTarget = normalizeReg(plan["飞机注册号"]);
     const dateTarget = plan["出发日期"];
-    const depCity = plan["出发城市"].split('/')[0].trim(); // 净化
-    const arrCity = plan["到达城市"].split('/')[0].trim(); // 净化
+    const depCity = plan["出发城市"];
+    const arrCity = plan["到达城市"];
     const depInfo = getLocationInfo(depCity);
     const arrInfo = getLocationInfo(arrCity);
     const depKey = depInfo.zone === "境外" ? depInfo.region : depCity;
@@ -2105,7 +1967,7 @@ async function runDailyPlans() {{
 """
     return script
 
-def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runNextDayPlans"):
+def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans"):
     flight_records_json = json.dumps(records, ensure_ascii=False, indent=4)
     template = f"""
 // ================= 自动生成的飞行计划脚本（次日/补备案专用） =================
@@ -2294,10 +2156,6 @@ def run_feature_d():
 
             # 剔除不是 B 开头的外机计划
             df = df[df["飞机注册号"].astype(str).str.startswith("B", na=False)].copy()
-            
-            # 强制净化城市列：把 "富蕴/可可托海" 变成 "富蕴"
-            df['出发城市'] = df['出发城市'].astype(str).str.strip().str.split('/').str[0]
-            df['到达城市'] = df['到达城市'].astype(str).str.strip().str.split('/').str[0]
 
             # 处理日期格式
             df['出发日期'] = pd.to_datetime(df['出发日期']).dt.date
@@ -2419,12 +2277,11 @@ def run_feature_d():
             city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
             detail_map_json = json.dumps(detail_map, ensure_ascii=False, indent=4)
             domestic_keywords_json = json.dumps(DOMESTIC_KEYWORDS)
-            icao_map_json = json.dumps(DOMESTIC_ICAO_MAP, ensure_ascii=False, indent=4)
 
-            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json, icao_map_json)
-            backup_script = generate_nextday_script(list_backup, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runBackupPlans") if len(list_backup) > 0 else ""
-            daily_script = generate_daily_script(list_execute, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json) if len(list_execute) > 0 else ""
-            future_script = generate_nextday_script(list_future, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runNextDayPlans") if len(list_future) > 0 else ""
+            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
+            backup_script = generate_nextday_script(list_backup, city_map_json, detail_map_json, domestic_keywords_json, func_name="runBackupPlans") if len(list_backup) > 0 else ""
+            daily_script = generate_daily_script(list_execute, city_map_json, detail_map_json, domestic_keywords_json) if len(list_execute) > 0 else ""
+            future_script = generate_nextday_script(list_future, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans") if len(list_future) > 0 else ""
 
             final_script = base_script + "\n\n" + backup_script + "\n\n" + daily_script + "\n\n" + future_script + """
 (async () => {
