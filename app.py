@@ -1038,7 +1038,6 @@ def run_feature_c():
 
 
 
-
 # ==============================
 # 功能 D：通航脚本生成器（完整版，包含智能匹配与三日独立拆分）
 # ==============================
@@ -2318,8 +2317,15 @@ def run_feature_d():
 })();
 """
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
+            
+            # 新增手动刷新按钮
+            if st.button("🔄 强制刷新脚本", help="如果下方代码没有更新，请点击此按钮"):
+                st.rerun()
+                
             st.code(final_script, language="javascript")
-            st.info("💡 提示：请确保已登录系统并保持在「经营活动信息管理」列表页，脚本将严格按照顺序自动处理。")
+            
+            st.info("💡 重要提示：\n1. 每次勾选计划后，下方脚本会自动刷新。\n2. **在粘贴到浏览器控制台之前，请先输入 `clear()` 并回车，清空旧代码**，然后再粘贴最新代码运行，以免旧脚本残留导致执行混乱。")
+            
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
                 data=final_script,
@@ -2332,7 +2338,6 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-
 
 
 
