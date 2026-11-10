@@ -1033,8 +1033,6 @@ def run_feature_c():
 
 
 
-
-
 # ==============================
 # 功能 D：通航脚本生成器（ICAO 维表版）
 # 只替换本段；其余功能不动
@@ -1612,12 +1610,12 @@ function getLocationInfo(icao, cityRaw) {
         if (e) {
             return {
                 zone: "境内", icao: code, province: e.p, candidates: (e.c || []).slice(),
-                airport: e.a || "", airportName: e.n || "", error: null
+                airport: e.a || "", airportName: e.n || "", raw: city, error: null
             };
         }
         return {
             zone: "境内", icao: code, province: null, candidates: city ? [city] : [],
-            airport: "", airportName: "", error: "ICAO " + code + " 不在维表"
+            airport: "", airportName: "", raw: city, error: "ICAO " + code + " 不在维表"
         };
     }
 
@@ -1629,7 +1627,8 @@ function getLocationInfo(icao, cityRaw) {
     }
     return {
         zone: "境外", icao: code, province: null, country: country || null,
-        candidates: country ? [country] : [], error: country ? null : "境外段城市无法识别国家"
+        candidates: country ? [country] : [], airport: "", airportName: "",
+        raw: city, error: country ? null : "境外段城市无法识别国家"
     };
 }
 
@@ -1657,7 +1656,8 @@ async function setSelectValue(selectEl, valueText) {
 
     for (let i = 0; i < selectEl.options.length; i++) {
         const optText = (selectEl.options[i].text || "").trim();
-        if (!optText || optText === "请选择" || optText === "其它") continue;
+        if (!optText || optText === "请选择") continue;
+        if (optText === "其它" && target !== "其它") continue;   // 其它是占位项，但目标本身就是“其它”时必须可选
 
         let score = 0;
         if (optText === target) {
@@ -1813,26 +1813,54 @@ async function fillAirportBlock(blockIndex, info, label) {
         return false;
     }
 
-    // 境外：选“其它”后填机场名称
+    // 境外：先在机场下拉里选“其它”，再填 [境外][境外] + 机场名称
     if (!(await setSelectValue(secondSelect, "其它"))) {
-        console.error(`❌ ${label} 无法选择“其它”`);
+        console.error(`❌ ${label} 机场下拉里没有“其它”选项（选项写法可能变了），该计划请手动处理`);
         return false;
     }
-    await sleep(800);
+    await sleep(1200);
 
-    let zoneXPath, zone2XPath, nameXPath;
-    if (blockIndex === 2) {
-        zoneXPath = '/html/body/div/div[1]/div[3]/div/div[2]/form/div[11]/div[2]/div[2]/div/div[2]/div/select[1]';
-        zone2XPath = '/html/body/div/div[1]/div[3]/div/div[2]/form/div[11]/div[2]/div[2]/div/div[2]/div/select[2]';
-        nameXPath = '/html/body/div/div[1]/div[3]/div/div[2]/form/div[11]/div[2]/div[2]/div/div[2]/div/input';
-    } else {
-        zoneXPath = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[11]/div[1]/div[2]/div/div[2]/div/select[1]';
-        zone2XPath = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[11]/div[1]/div[2]/div/div[2]/div/select[2]';
-        nameXPath = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[11]/div[1]/div[2]/div/div[2]/div/input';
+    // 选完“其它”后，同一区块会多出两个“境外”下拉和一个机场名称输入框
+    let box = firstSelect;
+    while (box && !(box.contains && box.contains(secondSelect))) box = box.parentElement;
+
+    let z1 = null, z2 = null, nameInput = null;
+    if (box) {
+        const allSel = box.querySelectorAll('select');
+        if (allSel.length >= 4) { z1 = allSel[2]; z2 = allSel[3]; }
+        const inputs = Array.from(box.querySelectorAll('input'))
+            .filter(i => i.type !== 'checkbox' && i.type !== 'radio' && !i.readOnly);
+        if (inputs.length) nameInput = inputs[inputs.length - 1];
     }
-    const z1 = await waitForElement(zoneXPath, 10000);
-    const z2 = await waitForElement(zone2XPath, 10000);
-    const nameInput = await waitForElement(nameXPath, 10000);
+
+    // 兜底：按原来的绝对路径再找一遍（两种页面层级写法都试）
+    if (!z1 || !z2) {
+        const seg = blockIndex === 2 ? 'div[11]/div[2]/div[2]/div' : 'div[11]/div[1]/div[2]/div';
+        const bases = [`/html/body/div[1]/div/div[3]/div/div[2]/form/${seg}/div[2]/div`,
+                       `/html/body/div/div[1]/div[3]/div/div[2]/form/${seg}/div[2]/div`];
+        for (const b of bases) {
+            if (!z1) z1 = await waitForElement(b + '/select[1]', 3000);
+            if (!z2) z2 = await waitForElement(b + '/select[2]', 3000);
+            if (!nameInput) nameInput = await waitForElement(b + '/input', 3000);
+            if (z1 && z2) break;
+        }
+    }
+
+    if (!z1 || !z2) {
+        console.error(`❌ ${label} 选了“其它”但没找到境外的两级下拉，该计划请手动处理`);
+        return false;
+    }
+
+    if (nameInput) {
+        const cityStr = info.raw || "";
+        const guess = cityStr.replace(/^[^\s\-]+[\s\-]+/, "").trim() || cityStr;
+        const nameVal = info.airportName || guess;
+        if (nameVal) {
+            setNumberInput(nameInput, nameVal);
+            console.log(`  ℹ️ ${label} 境外机场名称填：${nameVal}${info.airportName ? "" : "（按城市串推断，请核对）"}`);
+        }
+    }
+
     const okZ = (await setSelectValue(z1, "境外")) && (await setSelectValue(z2, "境外"));
     if (nameInput && info.airportName) {
         setNumberInput(nameInput, info.airportName);
@@ -2017,27 +2045,37 @@ async function waitForReturnToList(timeout = 300000) {
     return false;
 }
 
-async function ensureListPage() {
-    const btn = await waitForElement('input.query.yuanjiao', 15000, false);
+async function ensureListPage(passiveTimeout = 90000) {
+    let btn = await waitForElement('input.query.yuanjiao', 10000, false);
     if (btn) return true;
-    console.log('当前不在列表页，尝试关闭可能遗留的对话框...');
+
+    console.log('当前不在列表页，先尝试点掉遗留的按钮...');
     const doc = await getMainDoc();
-    if (!doc) return false;
-    let closeBtn = doc.evaluate('//button[contains(text(), "取消")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-    if (!closeBtn) closeBtn = doc.evaluate('//button[contains(text(), "关闭")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-    if (!closeBtn) closeBtn = doc.evaluate('//button[contains(text(), "返回")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-    if (closeBtn) {
-        closeBtn.click();
-        console.log('已点击关闭按钮，等待返回列表页');
-        await sleep(1000);
-        const backBtn = await waitForElement('input.query.yuanjiao', 10000, false);
-        return backBtn !== null;
-    } else {
-        console.warn('未找到返回按钮，请手动关闭对话框后继续（脚本将等待5秒）');
-        await sleep(5000);
-        const backBtn = await waitForElement('input.query.yuanjiao', 5000, false);
-        return backBtn !== null;
+    if (doc) {
+        let closeBtn = doc.evaluate('//button[contains(text(), "取消")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (!closeBtn) closeBtn = doc.evaluate('//button[contains(text(), "关闭")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (!closeBtn) closeBtn = doc.evaluate('//input[@type="button" and contains(@value, "返回")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (!closeBtn) closeBtn = doc.evaluate('//a[contains(text(), "返回")]', doc, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+        if (closeBtn) {
+            closeBtn.click();
+            console.log('已点击返回/关闭按钮，等待列表页...');
+            await sleep(1200);
+        }
     }
+
+    // 表单页偶尔没有可点的返回按钮，这里不硬失败，给时间手动收尾
+    const start = Date.now();
+    console.log(`⚠️ 当前还停在表单页，请手动点“返回/取消”回到列表页（最多等 ${Math.round(passiveTimeout / 1000)} 秒）...`);
+    while (Date.now() - start < passiveTimeout) {
+        await sleep(2000);
+        const backBtn = await waitForElement('input.query.yuanjiao', 2000, false);
+        if (backBtn) {
+            console.log('✅ 已回到列表页，继续执行');
+            return true;
+        }
+    }
+    console.error('❌ 等待超时仍未回到列表页');
+    return false;
 }
 """
 
@@ -2286,9 +2324,13 @@ async function runDailyPlans() {{
         }}
         const success = await processExistingPlanWithManual(null, plan);
         if (!success) {{
-            console.error(`⚠️ 第 ${{processedCount}} 个计划处理失败，尝试继续下一个...`);
-            await ensureListPage();
-            await sleep(2000);
+            console.error(`⚠️ 第 ${{processedCount}} 个计划未填完，先回到列表页再继续`);
+            const back = await ensureListPage(90000);
+            if (!back) {{
+                console.error('❌ 回不到列表页，当日流程中止。请手动回到列表页，然后把脚本重新粘贴一次，从这条计划继续。');
+                return;
+            }}
+            await sleep(1500);
         }}
         await sleep(1000);
     }}
@@ -2706,6 +2748,7 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
+
 
 
 
