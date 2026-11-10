@@ -1039,173 +1039,171 @@ def run_feature_c():
 
 
 # ==============================
-# 功能 D：通航脚本生成器（完整版，包含智能匹配与三日独立拆分）
+# 功能 D：通航脚本生成器（终极增强版：四字码识别+智能匹配+三日拆分）
 # ==============================
-COUNTRIES = [
-    "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
-    "柬埔寨", "缅甸", "泰国", "马来西亚", "文莱", "新加坡", "印度尼西亚", "东帝汶",
-    "尼泊尔", "不丹", "孟加拉国", "印度", "巴基斯坦", "斯里兰卡", "马尔代夫",
-    "哈萨克斯坦", "吉尔吉斯斯坦", "塔吉克斯坦", "乌兹别克斯坦", "土库曼斯坦",
-    "阿富汗", "伊拉克", "伊朗", "叙利亚", "约旦", "黎巴嫩", "以色列", "巴勒斯坦",
-    "沙特阿拉伯", "巴林", "卡塔尔", "科威特", "阿联酋", "阿曼", "也门", "格鲁吉亚",
-    "亚美尼亚", "阿塞拜疆", "土耳其", "塞浦路斯", "芬兰", "瑞典", "挪威", "冰岛",
-    "丹麦", "法罗群岛（丹）", "爱沙尼亚", "拉脱维亚", "立陶宛", "白俄罗斯", "俄罗斯",
-    "乌克兰", "摩尔多瓦", "波兰", "捷克", "斯洛伐克", "匈牙利", "德国", "奥地利",
-    "瑞士", "列支敦士登", "英国", "爱尔兰", "荷兰", "比利时", "卢森堡", "法国",
-    "摩纳哥", "罗马尼亚", "保加利亚", "塞尔维亚", "马其顿", "阿尔巴尼亚", "希腊",
-    "斯洛文尼亚", "克罗地亚", "波斯尼亚和墨塞哥维那", "意大利", "梵蒂冈", "圣马力诺",
-    "马耳他", "西班牙", "葡萄牙", "安道尔", "埃及", "利比亚", "苏丹", "突尼斯",
-    "阿尔及利亚", "摩洛哥", "亚速尔群岛（葡）", "马德拉群岛（葡）", "埃塞俄比亚",
-    "厄立特里亚", "索马里", "吉布提", "肯尼亚", "坦桑尼亚", "乌干达", "卢旺达",
-    "布隆迪", "塞舌尔", "乍得", "中非", "喀麦隆", "赤道几内亚", "加蓬", "刚果（布）",
-    "刚果（金）", "圣多美及普林西比", "毛里塔尼亚", "西撒哈拉", "塞内加尔", "冈比亚",
-    "马里", "布基纳法索", "几内亚", "几内亚比绍", "佛得角", "塞拉利昂", "利比里亚",
-    "科特迪瓦", "加纳", "多哥", "贝宁", "尼日尔", "加那利群岛（西）", "赞比亚",
-    "安哥拉", "津巴布韦", "马拉维", "莫桑比克", "博茨瓦纳", "纳米比亚", "南非",
-    "斯威士兰", "莱索托", "马达加斯加", "科摩罗", "毛里求斯", "留尼旺（法）",
-    "圣赫勒拿（英）", "澳大利亚", "新西兰", "巴布亚新几内亚", "所罗门群岛",
-    "瓦努阿图", "密克罗尼西亚", "马绍尔群岛", "帕劳", "瑙鲁", "基里巴斯", "图瓦卢",
-    "萨摩亚", "斐济群岛", "汤加", "库克群岛（新）", "关岛（美）", "新喀里多尼亚（法）",
-    "法属波利尼西亚", "皮特凯恩岛（英）", "瓦利斯与富图纳（法）", "纽埃（新）",
-    "托克劳（新）", "美属萨摩亚", "北马里亚纳（美）", "加拿大", "美国", "墨西哥",
-    "格陵兰（丹）", "危地马拉", "伯利兹", "萨尔瓦多", "洪都拉斯", "尼加拉瓜",
-    "哥斯达黎加", "巴拿马", "巴哈马", "古巴", "牙买加", "海地", "多米尼加共和国",
-    "安提瓜和巴布达", "圣基茨和尼维斯", "多米尼克", "圣卢西亚", "圣文森特和格林纳丁斯",
-    "格林纳达", "巴巴多斯", "特立尼达和多巴哥", "波多黎各（美）", "英属维尔京群岛",
-    "美属维尔京群岛", "安圭拉（英）", "蒙特塞拉特（英）", "瓜德罗普（法）",
-    "马提尼克（法）", "荷属安的列斯", "阿鲁巴（荷）", "特克斯和凯科斯群岛（英）",
-    "开曼群岛（英）", "百慕大（英）", "哥伦比亚", "委内瑞拉", "圭亚那", "法属圭亚那",
-    "苏里南", "厄瓜多尔", "秘鲁", "玻利维亚", "智利", "阿根廷", "乌拉圭", "巴拉圭",
-    "其他"
-]
-
-ABBR_TO_COUNTRY = {
-    "印尼": "印度尼西亚", "台北": "台湾", "高雄": "台湾", "台中": "台湾", 
-    "花莲": "台湾", "台东": "台湾", "嘉义": "台湾", "台南": "台湾",
+# 完整国内机场四字码及对应城市/省份映射
+DOMESTIC_ICAO_MAP = {
+    "ZBAA": {"city": "北京/首都", "province": "北京"}, "ZBAD": {"city": "北京/大兴", "province": "北京"},
+    "ZBAL": {"city": "阿拉善左旗/巴彦浩特", "province": "内蒙古"}, "ZBAR": {"city": "阿拉善右旗/巴丹吉林", "province": "内蒙古"},
+    "ZBCD": {"city": "承德/普宁", "province": "河北"}, "ZBCF": {"city": "赤峰/玉龙", "province": "内蒙古"},
+    "ZBCZ": {"city": "长治/王村", "province": "山西"}, "ZBDH": {"city": "秦皇岛/北戴河", "province": "河北"},
+    "ZBDS": {"city": "鄂尔多斯/伊金霍洛", "province": "内蒙古"}, "ZBDT": {"city": "大同/云冈", "province": "山西"},
+    "ZBEN": {"city": "额济纳旗/桃来", "province": "内蒙古"}, "ZBER": {"city": "二连浩特/赛乌素", "province": "内蒙古"},
+    "ZBES": {"city": "阿尔山/伊尔施", "province": "内蒙古"}, "ZBHD": {"city": "邯郸", "province": "河北"},
+    "ZBHH": {"city": "呼和浩特/白塔", "province": "内蒙古"}, "ZBHZ": {"city": "霍林郭勒/霍林河", "province": "内蒙古"},
+    "ZBLA": {"city": "呼伦贝尔/海拉尔", "province": "内蒙古"}, "ZBLF": {"city": "临汾/尧都", "province": "山西"},
+    "ZBLL": {"city": "吕梁/大武", "province": "山西"}, "ZBMZ": {"city": "满洲里/西郊", "province": "内蒙古"},
+    "ZBOW": {"city": "包头/东河", "province": "内蒙古"}, "ZBSG": {"city": "朔州/滋润", "province": "山西"},
+    "ZBSJ": {"city": "石家庄/正定", "province": "河北"}, "ZBSN": {"city": "唐山/三女河", "province": "河北"},
+    "ZBTJ": {"city": "天津/滨海", "province": "天津"}, "ZBTL": {"city": "通辽", "province": "内蒙古"},
+    "ZBUC": {"city": "乌兰察布/集宁", "province": "内蒙古"}, "ZBUH": {"city": "乌海", "province": "内蒙古"},
+    "ZBUL": {"city": "乌兰浩特/义勒力特", "province": "内蒙古"}, "ZBXH": {"city": "锡林浩特", "province": "内蒙古"},
+    "ZBXT": {"city": "邢台/褡裢", "province": "河北"}, "ZBXZ": {"city": "忻州/五台山", "province": "山西"},
+    "ZBYC": {"city": "运城/盐湖", "province": "山西"}, "ZBYN": {"city": "太原/武宿", "province": "山西"},
+    "ZBYZ": {"city": "巴彦淖尔/天吉泰", "province": "内蒙古"}, "ZBZJ": {"city": "张家口/宁远", "province": "河北"},
+    "ZBZL": {"city": "扎兰屯/成吉思汗", "province": "内蒙古"}, "ZGBH": {"city": "北海/福成", "province": "广西"},
+    "ZGBS": {"city": "百色/巴马", "province": "广西"}, "ZGCD": {"city": "常德/桃花源", "province": "湖南"},
+    "ZGCJ": {"city": "怀化/芷江", "province": "湖南"}, "ZGCZ": {"city": "郴州/北湖", "province": "湖南"},
+    "ZGDY": {"city": "张家界/荷花", "province": "湖南"}, "ZGGG": {"city": "广州/白云", "province": "广东"},
+    "ZGHA": {"city": "长沙/黄花", "province": "湖南"}, "ZGHC": {"city": "河池/金城江", "province": "广西"},
+    "ZGHY": {"city": "衡阳/南岳", "province": "湖南"}, "ZGHZ": {"city": "惠州/平潭", "province": "广东"},
+    "ZGKL": {"city": "桂林/两江", "province": "广西"}, "ZGLD": {"city": "罗定", "province": "广东"},
+    "ZGLG": {"city": "永州/零陵", "province": "湖南"}, "ZGMX": {"city": "梅州/梅县", "province": "广东"},
+    "ZGNN": {"city": "南宁/吴圩", "province": "广西"}, "ZGOW": {"city": "揭阳/潮汕", "province": "广东"},
+    "ZGSD": {"city": "珠海/金湾", "province": "广东"}, "ZGSG": {"city": "韶关/丹霞", "province": "广东"},
+    "ZGSY": {"city": "邵阳/武冈", "province": "湖南"}, "ZGSZ": {"city": "深圳/宝安", "province": "广东"},
+    "ZGUH": {"city": "珠海/九洲", "province": "广东"}, "ZGWZ": {"city": "梧州/西江", "province": "广西"},
+    "ZGXX": {"city": "湘西/边城", "province": "湖南"}, "ZGYJ": {"city": "阳江/合山", "province": "广东"},
+    "ZGYL": {"city": "玉林/福绵", "province": "广西"}, "ZGYY": {"city": "岳阳/三荷", "province": "湖南"},
+    "ZGZH": {"city": "柳州/白莲", "province": "广西"}, "ZGZJ": {"city": "湛江/吴川", "province": "广东"},
+    "ZHCC": {"city": "郑州/新郑", "province": "河南"}, "ZHEC": {"city": "鄂州/花湖", "province": "湖北"},
+    "ZHES": {"city": "恩施/许家坪", "province": "湖北"}, "ZHHH": {"city": "武汉/天河", "province": "湖北"},
+    "ZHJZ": {"city": "荆州/沙市", "province": "湖北"}, "ZHLY": {"city": "洛阳", "province": "河南"},
+    "ZHNY": {"city": "南阳/姜营", "province": "河南"}, "ZHQQ": {"city": "安阳/红旗渠", "province": "河南"},
+    "ZHSN": {"city": "神农架/红坪", "province": "湖北"}, "ZHSY": {"city": "十堰/武当山", "province": "湖北"},
+    "ZHXF": {"city": "襄阳/刘集", "province": "湖北"}, "ZHXY": {"city": "信阳/明港", "province": "河南"},
+    "ZHYC": {"city": "宜昌/三峡", "province": "湖北"}, "ZJHK": {"city": "海口/美兰", "province": "海南"},
+    "ZJQH": {"city": "琼海/博鳌", "province": "海南"}, "ZJSY": {"city": "三亚/凤凰", "province": "海南"},
+    "ZJYX": {"city": "三沙/永兴", "province": "海南"}, "ZLAK": {"city": "安康/富强", "province": "陕西"},
+    "ZLDH": {"city": "敦煌/莫高", "province": "甘肃"}, "ZLDL": {"city": "海西/德令哈", "province": "青海"},
+    "ZLGL": {"city": "果洛/玛沁", "province": "青海"}, "ZLGM": {"city": "格尔木", "province": "青海"},
+    "ZLGY": {"city": "固原/六盘山", "province": "宁夏"}, "ZLHB": {"city": "海北/祁连", "province": "青海"},
+    "ZLHX": {"city": "海西/茫崖", "province": "青海"}, "ZLHZ": {"city": "汉中/城固", "province": "陕西"},
+    "ZLIC": {"city": "银川/河东", "province": "宁夏"}, "ZLJC": {"city": "金昌/金川", "province": "甘肃"},
+    "ZLJQ": {"city": "嘉峪关/酒泉", "province": "甘肃"}, "ZLLL": {"city": "兰州/中川", "province": "甘肃"},
+    "ZLLN": {"city": "陇南/成县", "province": "甘肃"}, "ZLQY": {"city": "庆阳/西峰", "province": "甘肃"},
+    "ZLTS": {"city": "天水/麦积山", "province": "甘肃"}, "ZLXH": {"city": "甘南/夏河", "province": "甘肃"},
+    "ZLXN": {"city": "西宁/曹家堡", "province": "青海"}, "ZLXY": {"city": "西安/咸阳", "province": "陕西"},
+    "ZLYA": {"city": "延安/南泥湾", "province": "陕西"}, "ZLYL": {"city": "榆林/榆阳", "province": "陕西"},
+    "ZLYS": {"city": "玉树/巴塘", "province": "青海"}, "ZLZW": {"city": "中卫/沙坡头", "province": "宁夏"},
+    "ZLZY": {"city": "张掖/甘州", "province": "甘肃"}, "ZPBS": {"city": "保山/云瑞", "province": "云南"},
+    "ZPCW": {"city": "沧源/佤山", "province": "云南"}, "ZPDL": {"city": "大理/凤仪", "province": "云南"},
+    "ZPDQ": {"city": "迪庆/香格里拉", "province": "云南"}, "ZPJH": {"city": "西双版纳/嘎洒", "province": "云南"},
+    "ZPJM": {"city": "澜沧/景迈", "province": "云南"}, "ZPLC": {"city": "临沧/博尚", "province": "云南"},
+    "ZPLJ": {"city": "丽江/三义", "province": "云南"}, "ZPMS": {"city": "德宏/芒市", "province": "云南"},
+    "ZPNL": {"city": "宁蒗/泸沽湖", "province": "云南"}, "ZPPP": {"city": "昆明/长水", "province": "云南"},
+    "ZPSM": {"city": "普洱/思茅", "province": "云南"}, "ZPTC": {"city": "腾冲/驼峰", "province": "云南"},
+    "ZPWS": {"city": "文山/砚山", "province": "云南"}, "ZPZT": {"city": "昭通", "province": "云南"},
+    "ZSAM": {"city": "厦门/高崎", "province": "福建"}, "ZSAQ": {"city": "安庆", "province": "安徽"},
+    "ZSBA": {"city": "蚌埠/滕湖", "province": "安徽"}, "ZSBO": {"city": "亳州", "province": "安徽"},
+    "ZSCG": {"city": "常州/奔牛", "province": "江苏"}, "ZSCN": {"city": "南昌/昌北", "province": "江西"},
+    "ZSDY": {"city": "东营/胜利", "province": "山东"}, "ZSFY": {"city": "阜阳", "province": "安徽"},
+    "ZSFZ": {"city": "福州/长乐", "province": "福建"}, "ZSGS": {"city": "井冈山", "province": "江西"},
+    "ZSGZ": {"city": "赣州/黄金", "province": "江西"}, "ZSHC": {"city": "杭州/萧山", "province": "浙江"},
+    "ZSHZ": {"city": "菏泽/牡丹", "province": "山东"}, "ZSJD": {"city": "景德镇/罗家", "province": "江西"},
+    "ZSJG": {"city": "济宁/大安", "province": "山东"}, "ZSJH": {"city": "池州/九华山", "province": "安徽"},
+    "ZSJJ": {"city": "九江/庐山", "province": "江西"}, "ZSJN": {"city": "济南/遥墙", "province": "山东"},
+    "ZSJU": {"city": "衢州", "province": "浙江"}, "ZSJX": {"city": "嘉兴/南湖", "province": "浙江"},
+    "ZSLG": {"city": "连云港/花果山", "province": "江苏"}, "ZSLI": {"city": "丽水", "province": "浙江"},
+    "ZSLO": {"city": "连城/冠豸山", "province": "福建"}, "ZSLQ": {"city": "台州/路桥", "province": "浙江"},
+    "ZSLY": {"city": "临沂/启阳", "province": "山东"}, "ZSNB": {"city": "宁波/栎社", "province": "浙江"},
+    "ZSNJ": {"city": "南京/禄口", "province": "江苏"}, "ZSNT": {"city": "南通/兴东", "province": "江苏"},
+    "ZSOF": {"city": "合肥/新桥", "province": "安徽"}, "ZSPD": {"city": "上海/浦东", "province": "上海"},
+    "ZSQD": {"city": "青岛/胶东", "province": "山东"}, "ZSQZ": {"city": "泉州/晋江", "province": "福建"},
+    "ZSRJ": {"city": "赣州/瑞金", "province": "江西"}, "ZSRZ": {"city": "日照/山字河", "province": "山东"},
+    "ZSSH": {"city": "淮安/涟水", "province": "江苏"}, "ZSSM": {"city": "三明/沙县", "province": "福建"},
+    "ZSSR": {"city": "上饶/三清山", "province": "江西"}, "ZSSS": {"city": "上海/虹桥", "province": "上海"},
+    "ZSTX": {"city": "黄山/屯溪", "province": "安徽"}, "ZSWA": {"city": "芜湖/宣州", "province": "安徽"},
+    "ZSWF": {"city": "潍坊", "province": "山东"}, "ZSWH": {"city": "威海/大水泊", "province": "山东"},
+    "ZSWX": {"city": "无锡/硕放", "province": "江苏"}, "ZSWY": {"city": "武夷山", "province": "福建"},
+    "ZSWZ": {"city": "温州/龙湾", "province": "浙江"}, "ZSXZ": {"city": "徐州/观音", "province": "江苏"},
+    "ZSYA": {"city": "扬州/泰州", "province": "江苏"}, "ZSYC": {"city": "宜春/明月山", "province": "江西"},
+    "ZSYN": {"city": "盐城/南洋", "province": "江苏"}, "ZSYT": {"city": "烟台/蓬莱", "province": "山东"},
+    "ZSYW": {"city": "义乌", "province": "浙江"}, "ZSZS": {"city": "舟山/普陀山", "province": "浙江"},
+    "ZUAL": {"city": "阿里/昆莎", "province": "西藏"}, "ZUAS": {"city": "安顺/黄果树", "province": "贵州"},
+    "ZUBD": {"city": "昌都/邦达", "province": "西藏"}, "ZUBJ": {"city": "毕节/飞雄", "province": "贵州"},
+    "ZUBZ": {"city": "巴中/恩阳", "province": "四川"}, "ZUCK": {"city": "重庆/江北", "province": "重庆"},
+    "ZUDA": {"city": "达州/金垭", "province": "四川"}, "ZUDC": {"city": "稻城/亚丁", "province": "四川"},
+    "ZUDJ": {"city": "铜仁/德江", "province": "贵州"}, "ZUDR": {"city": "日喀则/定日", "province": "西藏"},
+    "ZUGH": {"city": "广汉", "province": "四川"}, "ZUGU": {"city": "广元/盘龙", "province": "四川"},
+    "ZUGY": {"city": "贵阳/龙洞堡", "province": "贵州"}, "ZUGZ": {"city": "甘孜/格萨尔", "province": "四川"},
+    "ZUHY": {"city": "阿坝/红原", "province": "四川"}, "ZUJZ": {"city": "九寨/黄龙", "province": "四川"},
+    "ZUKD": {"city": "康定", "province": "四川"}, "ZUKJ": {"city": "凯里/黄平", "province": "贵州"},
+    "ZULA": {"city": "阆中/古城", "province": "四川"}, "ZULB": {"city": "黔南/荔波", "province": "贵州"},
+    "ZULF": {"city": "乐山", "province": "四川"}, "ZULS": {"city": "拉萨/贡嘎", "province": "西藏"},
+    "ZULZ": {"city": "泸州/云龙", "province": "四川"}, "ZUMT": {"city": "遵义/茅台", "province": "贵州"},
+    "ZUMY": {"city": "绵阳/南郊", "province": "四川"}, "ZUNC": {"city": "南充/高坪", "province": "四川"},
+    "ZUNP": {"city": "黔东南/黎平", "province": "贵州"}, "ZUNZ": {"city": "林芝/米林", "province": "西藏"},
+    "ZUPL": {"city": "阿里/普兰", "province": "西藏"}, "ZUPS": {"city": "六盘水/月照", "province": "贵州"},
+    "ZUQJ": {"city": "黔江/武陵山", "province": "重庆"}, "ZURK": {"city": "日喀则/和平", "province": "西藏"},
+    "ZUSH": {"city": "山南/隆子", "province": "西藏"}, "ZUTF": {"city": "成都/天府", "province": "四川"},
+    "ZUTR": {"city": "铜仁/凤凰", "province": "贵州"}, "ZUUU": {"city": "成都/双流", "province": "四川"},
+    "ZUWL": {"city": "重庆/仙女山", "province": "重庆"}, "ZUWS": {"city": "重庆/巫山", "province": "重庆"},
+    "ZUWX": {"city": "万州/五桥", "province": "重庆"}, "ZUXC": {"city": "西昌/青山", "province": "四川"},
+    "ZUXJ": {"city": "新津", "province": "四川"}, "ZUYB": {"city": "宜宾/五粮液", "province": "四川"},
+    "ZUYI": {"city": "兴义/万峰林", "province": "贵州"}, "ZUZH": {"city": "攀枝花/保安营", "province": "四川"},
+    "ZUZY": {"city": "遵义/新舟", "province": "贵州"}, "ZWAK": {"city": "阿克苏/红旗坡", "province": "新疆"},
+    "ZWAL": {"city": "阿拉尔/塔里木", "province": "新疆"}, "ZWAT": {"city": "阿勒泰/雪都", "province": "新疆"},
+    "ZWBL": {"city": "博乐/阿拉山口", "province": "新疆"}, "ZWCM": {"city": "且末/玉都", "province": "新疆"},
+    "ZWFY": {"city": "富蕴/可可托海", "province": "新疆"}, "ZWHJ": {"city": "和静/巴音布鲁克", "province": "新疆"},
+    "ZWHM": {"city": "哈密/伊州", "province": "新疆"}, "ZWHZ": {"city": "石河子/花园", "province": "新疆"},
+    "ZWKC": {"city": "库车/龟兹", "province": "新疆"}, "ZWKL": {"city": "库尔勒/梨城", "province": "新疆"},
+    "ZWKM": {"city": "克拉玛依/古海", "province": "新疆"}, "ZWKN": {"city": "布尔津/喀纳斯", "province": "新疆"},
+    "ZWLK": {"city": "巴里坤/大河", "province": "新疆"}, "ZWLT": {"city": "巴音郭楞/轮台", "province": "新疆"},
+    "ZWNL": {"city": "新源/那拉提", "province": "新疆"}, "ZWQT": {"city": "奇台/江布拉克", "province": "新疆"},
+    "ZWRQ": {"city": "若羌/楼兰", "province": "新疆"}, "ZWSC": {"city": "莎车/叶尔羌", "province": "新疆"},
+    "ZWSH": {"city": "喀什/徕宁", "province": "新疆"}, "ZWTC": {"city": "塔城/千泉", "province": "新疆"},
+    "ZWTK": {"city": "塔什库尔干/红其拉甫", "province": "新疆"}, "ZWTL": {"city": "吐鲁番/交河", "province": "新疆"},
+    "ZWTN": {"city": "和田/昆冈", "province": "新疆"}, "ZWTS": {"city": "图木舒克/唐王城", "province": "新疆"},
+    "ZWWW": {"city": "乌鲁木齐/天山", "province": "新疆"}, "ZWYN": {"city": "伊犁/伊宁", "province": "新疆"},
+    "ZWYT": {"city": "于田/万方", "province": "新疆"}, "ZWZS": {"city": "昭苏/天马", "province": "新疆"},
+    "ZYAS": {"city": "鞍山/腾鳌", "province": "辽宁"}, "ZYBA": {"city": "白城/长安", "province": "吉林"},
+    "ZYBS": {"city": "白山/长白山", "province": "吉林"}, "ZYCC": {"city": "长春/龙嘉", "province": "吉林"},
+    "ZYCH": {"city": "长海", "province": "辽宁"}, "ZYCY": {"city": "朝阳", "province": "辽宁"},
+    "ZYDD": {"city": "丹东/浪头", "province": "辽宁"}, "ZYDQ": {"city": "大庆/萨尔图", "province": "黑龙江"},
+    "ZYDU": {"city": "五大连池/德都", "province": "黑龙江"}, "ZYFY": {"city": "抚远/东极", "province": "黑龙江"},
+    "ZYHB": {"city": "哈尔滨/太平", "province": "黑龙江"}, "ZYHE": {"city": "黑河/瑷珲", "province": "黑龙江"},
+    "ZYJD": {"city": "大兴安岭/鄂伦春", "province": "黑龙江"}, "ZYJM": {"city": "佳木斯/松江", "province": "黑龙江"},
+    "ZYJS": {"city": "建三江/湿地", "province": "黑龙江"}, "ZYJX": {"city": "鸡西/兴凯湖", "province": "黑龙江"},
+    "ZYJZ": {"city": "锦州/锦州湾", "province": "辽宁"}, "ZYLD": {"city": "伊春/林都", "province": "黑龙江"},
+    "ZYMD": {"city": "牡丹江/海浪", "province": "黑龙江"}, "ZYMH": {"city": "漠河/古莲", "province": "黑龙江"},
+    "ZYQQ": {"city": "齐齐哈尔/三家子", "province": "黑龙江"}, "ZYSD": {"city": "绥芬河/东宁", "province": "黑龙江"},
+    "ZYSQ": {"city": "松原/查干湖", "province": "吉林"}, "ZYTL": {"city": "大连/周水子", "province": "辽宁"},
+    "ZYTN": {"city": "通化/三源浦", "province": "吉林"}, "ZYTX": {"city": "沈阳/桃仙", "province": "辽宁"},
+    "ZYYJ": {"city": "延吉/朝阳川", "province": "吉林"}, "ZYYK": {"city": "营口/兰旗", "province": "辽宁"},
 }
 
-TAIWAN_CITIES = [
-    "台北松山", "台北桃园", "高雄小港", "台中清泉岗", "花莲", "台东", "嘉义", "台南", "马公", "金门", "马祖"
-]
+# 兼容原来的城市关键字列表
+DOMESTIC_KEYWORDS = list(set([v["city"].split("/")[0] for v in DOMESTIC_ICAO_MAP.values()] + [v["city"] for v in DOMESTIC_ICAO_MAP.values()]))
 
-CITY_TO_PROVINCE = {
-    "北京": "北京", "上海": "上海", "天津": "天津", "重庆": "重庆",
-    "广州": "广东", "深圳": "广东", "珠海": "广东", "汕头": "广东", "佛山": "广东", "江门": "广东",
-    "湛江": "广东", "茂名": "广东", "肇庆": "广东", "惠州": "广东", "梅州": "广东", "汕尾": "广东",
-    "河源": "广东", "阳江": "广东", "清远": "广东", "东莞": "广东", "中山": "广东", "潮州": "广东",
-    "揭阳": "广东", "云浮": "广东",
-    "南京": "江苏", "无锡": "江苏", "徐州": "江苏", "常州": "江苏", "苏州": "江苏", "南通": "江苏",
-    "连云港": "江苏", "淮安": "江苏", "盐城": "江苏", "扬州": "江苏", "镇江": "江苏", "泰州": "江苏",
-    "宿迁": "江苏",
-    "杭州": "浙江", "宁波": "浙江", "温州": "浙江", "嘉兴": "浙江", "湖州": "浙江", "绍兴": "浙江",
-    "金华": "浙江", "衢州": "浙江", "舟山": "浙江", "台州": "浙江", "丽水": "浙江",
-    "合肥": "安徽", "芜湖": "安徽", "蚌埠": "安徽", "淮南": "安徽", "马鞍山": "安徽", "淮北": "安徽",
-    "铜陵": "安徽", "安庆": "安徽", "黄山": "安徽", "滁州": "安徽", "阜阳": "安徽", "宿州": "安徽",
-    "六安": "安徽", "亳州": "安徽", "池州": "安徽", "宣城": "安徽",
-    "福州": "福建", "厦门": "福建", "莆田": "福建", "三明": "福建", "泉州": "福建", "漳州": "福建",
-    "南平": "福建", "龙岩": "福建", "宁德": "福建",
-    "南昌": "江西", "景德镇": "江西", "萍乡": "江西", "九江": "江西", "新余": "江西", "鹰潭": "江西",
-    "赣州": "江西", "吉安": "江西", "宜春": "江西", "抚州": "江西", "上饶": "江西",
-    "济南": "山东", "青岛": "山东", "淄博": "山东", "枣庄": "山东", "东营": "山东", "烟台": "山东",
-    "潍坊": "山东", "济宁": "山东", "泰安": "山东", "威海": "山东", "日照": "山东", "临沂": "山东",
-    "德州": "山东", "聊城": "山东", "滨州": "山东", "菏泽": "山东",
-    "郑州": "河南", "开封": "河南", "洛阳": "河南", "平顶山": "河南", "安阳": "河南", "鹤壁": "河南",
-    "新乡": "河南", "焦作": "河南", "濮阳": "河南", "许昌": "河南", "漯河": "河南", "三门峡": "河南",
-    "南阳": "河南", "商丘": "河南", "信阳": "河南", "周口": "河南", "驻马店": "河南",
-    "武汉": "湖北", "黄石": "湖北", "十堰": "湖北", "宜昌": "湖北", "襄阳": "湖北", "鄂州": "湖北",
-    "荆门": "湖北", "孝感": "湖北", "荆州": "湖北", "黄冈": "湖北", "咸宁": "湖北", "随州": "湖北",
-    "长沙": "湖南", "株洲": "湖南", "湘潭": "湖南", "衡阳": "湖南", "邵阳": "湖南", "岳阳": "湖南",
-    "常德": "湖南", "张家界": "湖南", "益阳": "湖南", "郴州": "湖南", "永州": "湖南", "怀化": "湖南",
-    "娄底": "湖南",
-    "成都": "四川", "自贡": "四川", "攀枝花": "四川", "泸州": "四川", "德阳": "四川", "绵阳": "四川",
-    "广元": "四川", "遂宁": "四川", "内江": "四川", "乐山": "四川", "南充": "四川", "眉山": "四川",
-    "宜宾": "四川", "广安": "四川", "达州": "四川", "雅安": "四川", "巴中": "四川", "资阳": "四川",
-    "贵阳": "贵州", "六盘水": "贵州", "遵义": "贵州", "安顺": "贵州", "毕节": "贵州", "铜仁": "贵州",
-    "昆明": "云南", "曲靖": "云南", "玉溪": "云南", "保山": "云南", "昭通": "云南", "丽江": "云南",
-    "普洱": "云南", "临沧": "云南",
-    "西安": "陕西", "铜川": "陕西", "宝鸡": "陕西", "咸阳": "陕西", "渭南": "陕西", "延安": "陕西",
-    "汉中": "陕西", "榆林": "陕西", "安康": "陕西", "商洛": "陕西",
-    "兰州": "甘肃", "嘉峪关": "甘肃", "金昌": "甘肃", "白银": "甘肃", "天水": "甘肃", "武威": "甘肃",
-    "张掖": "甘肃", "平凉": "甘肃", "酒泉": "甘肃", "庆阳": "甘肃", "定西": "甘肃", "陇南": "甘肃",
-    "西宁": "青海", "海东": "青海",
-    "银川": "宁夏", "石嘴山": "宁夏", "吴忠": "宁夏", "固原": "宁夏", "中卫": "宁夏",
-    "乌鲁木齐": "新疆", "克拉玛依": "新疆", "吐鲁番": "新疆", "哈密": "新疆",
-    "伊犁": "新疆", "伊犁伊宁": "新疆",
-    "拉萨": "西藏", "日喀则": "西藏", "昌都": "西藏", "林芝": "西藏", "山南": "西藏", "那曲": "西藏",
-    "呼和浩特": "内蒙古", "包头": "内蒙古", "乌海": "内蒙古", "赤峰": "内蒙古", "通辽": "内蒙古",
-    "鄂尔多斯": "内蒙古", "呼伦贝尔": "内蒙古", "巴彦淖尔": "内蒙古", "乌兰察布": "内蒙古",
-    "南宁": "广西", "柳州": "广西", "桂林": "广西", "梧州": "广西", "北海": "广西", "防城港": "广西",
-    "钦州": "广西", "贵港": "广西", "玉林": "广西", "百色": "广西", "贺州": "广西", "河池": "广西",
-    "来宾": "广西", "崇左": "广西",
-    "海口": "海南", "三亚": "海南", "三沙": "海南", "儋州": "海南",
-    "石家庄": "河北", "唐山": "河北", "秦皇岛": "河北", "邯郸": "河北", "邢台": "河北", "保定": "河北",
-    "张家口": "河北", "承德": "河北", "沧州": "河北", "廊坊": "河北", "衡水": "河北",
-    "太原": "山西", "大同": "山西", "阳泉": "山西", "长治": "山西", "晋城": "山西", "朔州": "山西",
-    "晋中": "山西", "运城": "山西", "忻州": "山西", "临汾": "山西", "吕梁": "山西",
-    "沈阳": "辽宁", "大连": "辽宁", "鞍山": "辽宁", "抚顺": "辽宁", "本溪": "辽宁", "丹东": "辽宁",
-    "锦州": "辽宁", "营口": "辽宁", "阜新": "辽宁", "辽阳": "辽宁", "盘锦": "辽宁", "铁岭": "辽宁",
-    "朝阳": "辽宁", "葫芦岛": "辽宁",
-    "长春": "吉林", "吉林": "吉林", "四平": "吉林", "辽源": "吉林", "通化": "吉林", "白山": "吉林",
-    "松原": "吉林", "白城": "吉林",
-    "哈尔滨": "黑龙江", "齐齐哈尔": "黑龙江", "鸡西": "黑龙江", "鹤岗": "黑龙江", "双鸭山": "黑龙江",
-    "大庆": "黑龙江", "伊春": "黑龙江", "佳木斯": "黑龙江", "七台河": "黑龙江", "牡丹江": "黑龙江",
-    "黑河": "黑龙江", "绥化": "黑龙江",
-}
-
-DOMESTIC_KEYWORDS = list(CITY_TO_PROVINCE.keys())
-
+# 补充完善省份映射
 DEFAULT_DETAIL_MAP = {
-    "北京首都": {"province": "北京", "district": "顺义区"},
-    "北京大兴": {"province": "北京", "district": "大兴区"},
-    "天津滨海": {"province": "天津", "district": "滨海新区"},
-    "上海虹桥": {"province": "上海", "district": "闵行区"},
-    "上海浦东": {"province": "上海", "district": "浦东新区"},
-    "重庆江北": {"province": "重庆", "district": "江北区"},
-    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"},
-    "伊犁伊宁": {"province": "新疆", "district": "伊犁"},
+    "北京首都": {"province": "北京", "district": "顺义区"}, "北京大兴": {"province": "北京", "district": "大兴区"},
+    "天津滨海": {"province": "天津", "district": "滨海新区"}, "上海虹桥": {"province": "上海", "district": "闵行区"},
+    "上海浦东": {"province": "上海", "district": "浦东新区"}, "重庆江北": {"province": "重庆", "district": "江北区"},
+    "乌鲁木齐天山": {"province": "新疆", "district": "乌鲁木齐"}, "伊犁伊宁": {"province": "新疆", "district": "伊犁"},
 }
-
-def parse_flight_time(time_str):
-    try:
-        parts = time_str.split(':')
-        hours = int(parts[0])
-        minutes = int(parts[1])
-        return hours, minutes
-    except:
-        return 0, 0
+for k, v in DOMESTIC_ICAO_MAP.items():
+    DEFAULT_DETAIL_MAP[v["city"]] = {"province": v["province"], "district": v["city"].split("/")[0]}
 
 def extract_country(city_name):
-    if city_name.startswith("印尼"):
-        return "印度尼西亚"
-    parts = re.split(r'[\s\-]', city_name)
-    if parts:
-        first_part = parts[0]
-        if first_part in ABBR_TO_COUNTRY:
-            return ABBR_TO_COUNTRY[first_part]
-    for tw_city in TAIWAN_CITIES:
-        if tw_city in city_name:
-            return "台湾"
-    for country in COUNTRIES:
-        if country in city_name:
-            return country
-    if parts:
-        return parts[0]
-    return city_name
+    return city_name.split()[0] if city_name.split() else city_name
 
 def get_province_from_city(city):
-    for keyword, province in CITY_TO_PROVINCE.items():
-        if keyword in city:
-            return province
     return city.split()[0] if city.split() else city
 
 def extract_district_from_city(city):
-    for keyword in CITY_TO_PROVINCE.keys():
-        if keyword in city:
-            return keyword
-    district = city.split()[0] if city.split() else city
-    if district.endswith('机场'):
-        district = district[:-2]
-    return district
+    return city.split()[0] if city.split() else city
 
 def build_city_mappings(df, custom_detail_map):
     cities = set()
@@ -1219,10 +1217,6 @@ def build_city_mappings(df, custom_detail_map):
     city_map = {}
 
     for city in cities:
-        if any(tw in city for tw in TAIWAN_CITIES):
-            city_map[city] = "台湾"
-            continue
-
         if city in detail_map:
             province = detail_map[city]["province"]
             city_map[city] = province
@@ -1241,7 +1235,7 @@ def build_city_mappings(df, custom_detail_map):
     return city_map, detail_map
 
 
-def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json):
+def generate_base_script(city_map_json, detail_map_json, domestic_keywords_json, icao_map_json):
     return f"""
 // ================= 公共辅助函数（基础脚本） =================
 // 生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
@@ -1362,24 +1356,25 @@ function setNumberInput(inputEl, value) {{
 const CITY_MAP_RAW = {city_map_json};
 const CITY_MAP_CORRECTED = {{
     ...CITY_MAP_RAW,
-    "印尼雅加达哈林": "印度尼西亚",
-    "印尼巴厘岛": "印度尼西亚",
-    "台北松山": "台湾",
-    "台北桃园": "台湾",
-    "高雄小港": "台湾",
-    "台中清泉岗": "台湾",
-    "花莲": "台湾",
-    "台东": "台湾",
-    "嘉义": "台湾",
-    "台南": "台湾",
-    "马公": "台湾",
-    "金门": "台湾",
-    "马祖": "台湾"
+    "印尼雅加达哈林": "印度尼西亚", "印尼巴厘岛": "印度尼西亚",
+    "台北松山": "台湾", "台北桃园": "台湾", "高雄小港": "台湾", "台中清泉岗": "台湾", "花莲": "台湾", "台东": "台湾", "嘉义": "台湾", "台南": "台湾", "马公": "台湾", "金门": "台湾", "马祖": "台湾"
 }};
 const CITY_MAP = CITY_MAP_CORRECTED;
 const DOMESTIC_KEYWORDS = {domestic_keywords_json};
 
+// 四字码及对应的省份/城市信息
+const DOMESTIC_ICAO_MAP = {icao_map_json};
+
 function getLocationInfo(city) {{
+    // 如果传入的是四字码，直接查表
+    if (city.length === 4 && /^[A-Z]+$/.test(city)) {{
+        if (DOMESTIC_ICAO_MAP[city]) {{
+            return {{ zone: "境内", region: DOMESTIC_ICAO_MAP[city].province }};
+        }}
+        return {{ zone: "境外", region: "未知境外" }};
+    }}
+
+    // 按城市名判断
     const isDomestic = DOMESTIC_KEYWORDS.some(keyword => city.includes(keyword));
     if (isDomestic) {{
         let region = CITY_MAP[city];
@@ -1745,7 +1740,7 @@ async function ensureListPage() {{
 }}
 """
 
-def generate_daily_script(records, city_map_json, detail_map_json, domestic_keywords_json):
+def generate_daily_script(records, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json):
     js_data = json.dumps(records, ensure_ascii=False, indent=4)
     script = f"""
 // ================= 自动生成的飞行计划脚本（当日计划专用） =================
@@ -1969,7 +1964,7 @@ async function runDailyPlans() {{
 """
     return script
 
-def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans"):
+def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runNextDayPlans"):
     flight_records_json = json.dumps(records, ensure_ascii=False, indent=4)
     template = f"""
 // ================= 自动生成的飞行计划脚本（次日/补备案专用） =================
@@ -2279,11 +2274,12 @@ def run_feature_d():
             city_map_json = json.dumps(city_map, ensure_ascii=False, indent=4)
             detail_map_json = json.dumps(detail_map, ensure_ascii=False, indent=4)
             domestic_keywords_json = json.dumps(DOMESTIC_KEYWORDS)
+            icao_map_json = json.dumps(DOMESTIC_ICAO_MAP, ensure_ascii=False, indent=4)
 
-            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
-            backup_script = generate_nextday_script(list_backup, city_map_json, detail_map_json, domestic_keywords_json, func_name="runBackupPlans") if len(list_backup) > 0 else ""
-            daily_script = generate_daily_script(list_execute, city_map_json, detail_map_json, domestic_keywords_json) if len(list_execute) > 0 else ""
-            future_script = generate_nextday_script(list_future, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans") if len(list_future) > 0 else ""
+            base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json, icao_map_json)
+            backup_script = generate_nextday_script(list_backup, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runBackupPlans") if len(list_backup) > 0 else ""
+            daily_script = generate_daily_script(list_execute, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json) if len(list_execute) > 0 else ""
+            future_script = generate_nextday_script(list_future, city_map_json, detail_map_json, domestic_keywords_json, icao_map_json, func_name="runNextDayPlans") if len(list_future) > 0 else ""
 
             final_script = base_script + "\n\n" + backup_script + "\n\n" + daily_script + "\n\n" + future_script + """
 (async () => {
