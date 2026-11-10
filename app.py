@@ -1040,7 +1040,7 @@ def run_feature_c():
 
 
 # ==============================
-# 功能 D：通航脚本生成器（完整版，包含所有依赖字典与脚本生成函数）
+# 功能 D：通航脚本生成器（完整版，包含智能匹配与三日独立拆分）
 # ==============================
 COUNTRIES = [
     "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
@@ -1289,19 +1289,60 @@ function setDateInput(inputEl, dateStr) {{
     return true;
 }}
 
+// ====== 智能匹配下拉框选项 ======
 async function setSelectValue(selectEl, valueText) {{
     if (!selectEl) return false;
+    let bestIndex = -1;
+    let bestScore = -9999;
+    const target = valueText.trim();
+
     for (let i = 0; i < selectEl.options.length; i++) {{
-        const opt = selectEl.options[i];
-        if (opt.text === valueText || opt.text.includes(valueText)) {{
-            selectEl.selectedIndex = i;
-            selectEl.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            await sleep(300);
-            console.log(`✅ 已选择 "${{valueText}}"`);
-            return true;
+        const optText = selectEl.options[i].text.trim();
+        if (!optText || optText === "请选择" || optText === "其它") continue;
+
+        let score = -1;
+
+        // 1. 完全一致，最高分
+        if (optText === target) {{
+            score = 1000;
+        }} 
+        // 2. 完全等于 target + "机场"
+        else if (optText === target + "机场") {{
+            score = 900;
+        }} 
+        // 3. 包含 target
+        else if (optText.includes(target)) {{
+            score = 100 - (optText.length - target.length);
+            if (optText.includes("直升机场") || optText.includes("通用机场")) {{
+                score -= 200;
+            }}
+            if (optText.includes("机场")) {{
+                score += 50;
+            }}
+        }} 
+        // 4. target 包含 optText
+        else if (target.includes(optText)) {{
+            score = 50 - (target.length - optText.length);
+            if (optText.includes("直升") || optText.includes("通用")) {{
+                score -= 200;
+            }}
+        }}
+
+        if (score > bestScore) {{
+            bestScore = score;
+            bestIndex = i;
         }}
     }}
-    console.warn(`⚠️ 未找到选项 "${{valueText}}"`);
+
+    if (bestIndex !== -1 && bestScore > -50) {{
+        selectEl.selectedIndex = bestIndex;
+        selectEl.dispatchEvent(new Event('change', {{ bubbles: true }}));
+        await sleep(300);
+        console.log(`✅ 已选择 "${{selectEl.options[bestIndex].text}}" (目标: ${{target}})`);
+        return true;
+    }}
+    
+    console.warn(`⚠️ 未找到合适的选项 "${{target}}"`);
     return false;
 }}
 
@@ -2100,7 +2141,7 @@ async function {func_name}() {{
 
 
 def run_feature_d():
-    # 1. 修改上传组件 Label
+    # 精简上传文案
     uploaded_file = sess_file_uploader("上传：航段数据导出", type=["xlsx", "xls"], key="d_upload")
 
     if uploaded_file is not None:
@@ -2116,7 +2157,7 @@ def run_feature_d():
                 st.info(f"实际列名: {list(df.columns)}")
                 return
 
-            # 2. 剔除不是 B 开头的外机计划
+            # 剔除不是 B 开头的外机计划
             df = df[df["飞机注册号"].astype(str).str.startswith("B", na=False)].copy()
 
             # 处理日期格式
