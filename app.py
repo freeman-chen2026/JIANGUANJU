@@ -1929,15 +1929,15 @@ async function runDailyPlans() {{
 """
     return script
 
-def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json):
+def generate_nextday_script(records, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans"):
     flight_records_json = json.dumps(records, ensure_ascii=False, indent=4)
     template = f"""
-// ================= 自动生成的飞行计划脚本（次日计划专用） =================
-// 次日待处理计划数: {len(records)}
+// ================= 自动生成的飞行计划脚本（次日/补备案专用） =================
+// 待处理计划数: {len(records)}
 // =========================================================
 
 async function processNextDayRecord(record) {{
-    console.log(`\\n开始处理次日计划：${{record.reg}} - ${{record.dep_city}} -> ${{record.arr_city}}`);
+    console.log(`\\n开始处理计划（次日/补备案）：${{record.reg}} - ${{record.dep_city}} -> ${{record.arr_city}}`);
 
     if (!(await ensureListPage())) {{
         console.error('无法返回列表页，终止流程');
@@ -2083,24 +2083,24 @@ async function processNextDayRecord(record) {{
     return true;
 }}
 
-async function runNextDayPlans() {{
+async function {func_name}() {{
     const flightRecords = {flight_records_json};
-    console.log(`🚀 开始执行次日计划自动化流程，共 ${{flightRecords.length}} 条计划...`);
+    console.log(`🚀 开始执行计划自动化流程（{func_name}），共 ${{flightRecords.length}} 条计划...`);
     for (let i = 0; i < flightRecords.length; i++) {{
         const success = await processNextDayRecord(flightRecords[i]);
         if (!success) {{
-            console.error(`第 ${{i+1}} 条次日计划处理失败，终止后续执行。`);
+            console.error(`第 ${{i+1}} 条计划处理失败，终止后续执行。`);
             break;
         }}
     }}
-    console.log("所有次日计划处理完毕");
+    console.log("所有计划处理完毕");
 }}
 """
     return template
 
 
 def run_feature_d():
-    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**先执行当日已飞完计划，再备案未来及漏备案计划**。")
+    st.markdown("上传 Excel 文件，自动生成浏览器控制台脚本，**严格按照：先补备案 -> 再执行当日 -> 最后备案未来 的逻辑运行**。")
 
     header_row = 1
     uploaded_file = sess_file_uploader("📂 上传：航段数据导出（只能是B机，提取的时候注意）", type=["xlsx", "xls"], key="d_upload")
@@ -2138,7 +2138,7 @@ def run_feature_d():
                 for k, v in rec_dict.items():
                     if pd.isna(v):
                         rec_dict[k] = ""
-                    elif isinstance(v, (date, datetime)): # 修复 JSON 序列化报错
+                    elif isinstance(v, (date, datetime)):
                         rec_dict[k] = str(v)
                 return rec_dict
 
@@ -2178,8 +2178,9 @@ def run_feature_d():
 
             col1, col2 = st.columns(2)
             
-            filtered_daily_records = []
-            filtered_future_records = []
+            list_backup = []     # 补备案队列
+            list_execute = []    # 执行队列
+            list_future = []     # 未来备案队列
 
             with col1:
                 st.markdown("### 📋 执行的计划（今日）")
@@ -2194,12 +2195,12 @@ def run_feature_d():
                             do_exec = st.checkbox(label, value=is_landed, key=f"exec_{idx}", disabled=not is_landed)
                         with c2:
                             # 补备案默认不勾选，任何时候都可以勾选
-                            do_backup = st.checkbox("补备案", value=False, key=f"backup_{idx}", help="如果昨天漏备案，可勾选此项")
+                            do_backup = st.checkbox("补备案", value=False, key=f"backup_{idx}", help="如果昨天漏备案，请勾选此项（脚本将先补备案，再执行）")
                         
                         if do_exec:
-                            filtered_daily_records.append(get_daily_rec(row))
+                            list_execute.append(get_daily_rec(row))
                         if do_backup:
-                            filtered_future_records.append(get_future_rec(row))
+                            list_backup.append(get_future_rec(row))
                 else:
                     st.info("暂无今日计划")
 
@@ -2211,11 +2212,11 @@ def run_feature_d():
                         label = f"{row['飞机注册号']} {row['出发日期']} {row['出发城市']}->{row['到达城市']}"
                         do_file = st.checkbox(label, value=select_all_file, key=f"file_future_{idx}")
                         if do_file:
-                            filtered_future_records.append(get_future_rec(row))
+                            list_future.append(get_future_rec(row))
                 else:
                     st.info("暂无未来计划")
 
-            st.success(f"✅ 最终脚本将包含 {len(filtered_daily_records)} 条执行计划，{len(filtered_future_records)} 条备案计划")
+            st.success(f"✅ 最终脚本将按顺序执行：{len(list_backup)} 条补备案 -> {len(list_execute)} 条执行 -> {len(list_future)} 条未来备案")
 
             custom_detail_map = {}
             city_map, detail_map = build_city_mappings(df, custom_detail_map)
@@ -2224,28 +2225,44 @@ def run_feature_d():
             domestic_keywords_json = json.dumps(DOMESTIC_KEYWORDS)
 
             base_script = generate_base_script(city_map_json, detail_map_json, domestic_keywords_json)
-            daily_script = generate_daily_script(filtered_daily_records, city_map_json, detail_map_json, domestic_keywords_json) if len(filtered_daily_records) > 0 else ""
-            nextday_script = generate_nextday_script(filtered_future_records, city_map_json, detail_map_json, domestic_keywords_json) if len(filtered_future_records) > 0 else ""
+            backup_script = generate_nextday_script(list_backup, city_map_json, detail_map_json, domestic_keywords_json, func_name="runBackupPlans") if len(list_backup) > 0 else ""
+            daily_script = generate_daily_script(list_execute, city_map_json, detail_map_json, domestic_keywords_json) if len(list_execute) > 0 else ""
+            future_script = generate_nextday_script(list_future, city_map_json, detail_map_json, domestic_keywords_json, func_name="runNextDayPlans") if len(list_future) > 0 else ""
 
-            final_script = base_script + "\n\n" + daily_script + "\n\n" + nextday_script + """
+            final_script = base_script + "\n\n" + backup_script + "\n\n" + daily_script + "\n\n" + future_script + """
 (async () => {
     console.log("========== 开始执行综合流程 ==========");
+    
+    // 第一步：先处理昨日漏备案的今日计划（必须先建记录）
+    if (typeof runBackupPlans === 'function') {
+        console.log(">>> 步骤 1/3: 开始补备案...");
+        await runBackupPlans();
+    } else {
+        console.log(">>> 步骤 1/3: 无需补备案。");
+    }
+    
+    // 第二步：再执行今日已飞完的计划
     if (typeof runDailyPlans === 'function') {
+        console.log(">>> 步骤 2/3: 开始执行当日已飞完计划...");
         await runDailyPlans();
     } else {
-        console.log("没有当日执行计划需要处理。");
+        console.log(">>> 步骤 2/3: 无需执行当日计划。");
     }
+    
+    // 第三步：最后备案未来计划
     if (typeof runNextDayPlans === 'function') {
+        console.log(">>> 步骤 3/3: 开始备案未来计划...");
         await runNextDayPlans();
     } else {
-        console.log("没有备案计划需要处理。");
+        console.log(">>> 步骤 3/3: 无需备案未来计划。");
     }
+    
     console.log("========== 综合流程全部完成 ==========");
 })();
 """
             st.subheader("📋 复制以下代码到浏览器控制台（F12）运行")
             st.code(final_script, language="javascript")
-            st.info("💡 提示：请确保已登录系统并保持在「经营活动信息管理」列表页，脚本将自动处理当日执行计划和备案计划。")
+            st.info("💡 提示：请确保已登录系统并保持在「经营活动信息管理」列表页，脚本将严格按照顺序自动处理。")
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
                 data=final_script,
@@ -2258,6 +2275,50 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
