@@ -1533,6 +1533,36 @@ async function waitForElement(selector, timeout = 15000, isXPath = true) {
     return null;
 }
 
+// 下拉选项常常比页面晚一到几秒才出来，等它加载后再判断，别急着判空
+async function ensureOptions(selectEl, getEl, timeout = 12000, minCount = 2) {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+        if (selectEl && selectEl.options && selectEl.options.length >= minCount) return selectEl;
+        await sleep(400);
+        if (getEl) {
+            try {
+                const el2 = await getEl();
+                if (el2) selectEl = el2;
+            } catch (e) {}
+        }
+    }
+    return (selectEl && selectEl.options && selectEl.options.length >= minCount) ? selectEl : null;
+}
+
+// 慢的时候给一次重试机会（8 秒后重试），别一失败就整批停
+async function withRetry(fn, attempts = 2, gap = 8000, label = "") {
+    for (let i = 0; i < attempts; i++) {
+        let ok = false;
+        try { ok = await fn(); } catch (e) { console.error(`${label} 抛异常`, e && e.message); ok = false; }
+        if (ok) return true;
+        if (i + 1 < attempts) {
+            console.warn(`⚠️ ${label} 第 ${i + 1} 次未成功，${gap / 1000} 秒后重试一次（多为网页反应慢）`);
+            await sleep(gap);
+        }
+    }
+    return false;
+}
+
 function setDateInput(inputEl, dateStr) {
     if (!inputEl) return false;
     inputEl.value = dateStr;
@@ -1614,6 +1644,15 @@ async function setSelectValue(selectEl, valueText) {
     const target = String(valueText == null ? "" : valueText).trim();
     if (!target) return false;
 
+    // 慢的时候下拉选项比页面晚出来，先等选项加载（最多 12 秒）
+    if (!selectEl.options || selectEl.options.length <= 1) {
+        selectEl = await ensureOptions(selectEl, null, 12000, 2);
+        if (!selectEl || !selectEl.options || selectEl.options.length <= 1) {
+            console.warn(`  ⚠️ 下拉框选项 12 秒内没加载出来：目标 "${target}"`);
+            return false;
+        }
+    }
+
     let bestIndex = -1, bestScore = 0, bestText = "";
 
     for (let i = 0; i < selectEl.options.length; i++) {
@@ -1661,12 +1700,13 @@ async function setSelectValue(selectEl, valueText) {
 // 航段（备案表单）：境内/境外 → 省 → 市/区
 async function fillSegmentSelects(container, info) {
     if (!container) { console.error("未找到航段容器"); return false; }
-    const selects = container.querySelectorAll("select");
-    if (selects.length < 2) { console.error("航段容器内 select 数量不足 2"); return false; }
+    const sel = (i) => container.querySelectorAll("select")[i];
+    if (!sel(0) || !sel(1)) { console.error("航段容器内 select 数量不足 2"); return false; }
 
     if (info.zone === "境外") {
-        const ok1 = await setSelectValue(selects[0], "境外");
-        const ok2 = await setSelectValue(selects[1], info.candidates[0]);
+        const ok1 = await setSelectValue(sel(0), "境外");
+        await sleep(600);
+        const ok2 = ok1 ? await setSelectValue(sel(1), info.candidates[0]) : false;
         if (!ok1 || !ok2) {
             console.error(`❌ ${info.icao} 境外国家匹配失败：${info.candidates[0] || "(空)"}`);
             return false;
@@ -1679,20 +1719,41 @@ async function fillSegmentSelects(container, info) {
         return false;
     }
 
-    const ok1 = await setSelectValue(selects[0], "境内");
-    const ok2 = await setSelectValue(selects[1], info.province);
-    if (!ok1 || !ok2) {
+    const ok1 = await setSelectValue(sel(0), "境内");
+    if (!ok1) {
+        console.error(`❌ ${info.icao} 无法选择“境内”`);
+        return false;
+    }
+    await sleep(600);
+    const ok2 = await setSelectValue(sel(1), info.province);
+    if (!ok2) {
         console.error(`❌ ${info.icao} 省级匹配失败：${info.province}`);
         return false;
     }
 
-    await sleep(1200);
-    const s3 = container.querySelectorAll("select")[2];
-    if (!s3) {
+    // 第三级：省选完它才重建，耐心等 15 秒
+    let s3 = null;
+    const start = Date.now();
+    while (Date.now() - start < 15000) {
+        const cur = sel(2);
+        if (!cur) {
+            if (Date.now() - start > 6000) break;   // 确实没有第三级，止于省
+        } else if (cur.options && cur.options.length > 1) {
+            s3 = cur;
+            break;
+        }
+        await sleep(400);
+    }
+
+    if (!sel(2)) {
         console.log(`  ℹ️ ${info.icao} 无第三级下拉，止于 ${info.province}`);
         return true;
     }
-    if (s3.options.length <= 1) {
+    if (!s3) {
+        console.error(`❌ ${info.icao} 第三级下拉 15 秒内一直是空的（省=${info.province}），可能省份选错`);
+        return false;
+    }
+    if (!s3.options || s3.options.length <= 1) {
         console.error(`❌ ${info.icao} 第三级下拉为空（省=${info.province}）`);
         return false;
     }
@@ -1702,19 +1763,20 @@ async function fillSegmentSelects(container, info) {
             console.log(`  ✅ ${info.icao} 第三级 = ${cand}`);
             return true;
         }
+        s3 = sel(2) || s3;
     }
     console.error(`❌ ${info.icao} 第三级无法匹配，候选=${info.candidates.join(" / ")}，请补 AIRPORT_TABLE 候选`);
     return false;
 }
 
 async function fillFirstSegmentSelects(icao, city) {
-    const container = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[1]/div/div', 5000, true);
+    const container = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[1]/div/div', 15000, true);
     if (!container) { console.error("未找到第一个航段容器"); return false; }
     return fillSegmentSelects(container, getLocationInfo(icao, city));
 }
 
 async function fillSecondSegmentSelects(icao, city) {
-    const container = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[1]/div/div', 5000, true);
+    const container = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[1]/div/div', 15000, true);
     if (!container) { console.error("未找到第二个航段容器"); return false; }
     return fillSegmentSelects(container, getLocationInfo(icao, city));
 }
@@ -1731,11 +1793,11 @@ async function fillAirportBlock(blockIndex, info, label) {
     }
 
     console.log(`⏳ 处理 ${label} 区块（${info.icao}）...`);
-    const firstSelect = await waitForElement(firstSelectXPath, 10000);
+    const firstSelect = await waitForElement(firstSelectXPath, 15000);
     if (!firstSelect) { console.error(`❌ 未找到 ${label} 第一个选择框`); return false; }
     const okFirst = await setSelectValue(firstSelect, blockIndex === 1 ? "起飞机场" : "降落机场");
 
-    const secondSelect = await waitForElement(secondSelectXPath, 10000);
+    const secondSelect = await waitForElement(secondSelectXPath, 15000);
     if (!secondSelect) { console.error(`❌ 未找到 ${label} 第二个选择框`); return false; }
 
     if (info.zone === "境内") {
@@ -1802,9 +1864,9 @@ function logAirportMapping(records) {
 # ---- 时间、飞机、日期、返回列表等（与原逻辑一致）----
 _JS_TAIL = r"""
 async function fillFirstSegmentTime(record) {
-    const hourInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[2]/div/input[1]', 5000, true);
-    const minuteInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[2]/div/input[2]', 5000, true);
-    const flightsInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[3]/div/input', 5000, true);
+    const hourInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[2]/div/input[1]', 15000, true);
+    const minuteInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[2]/div/input[2]', 15000, true);
+    const flightsInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[3]/div/input', 15000, true);
     if (hourInput && minuteInput && flightsInput) {
         hourInput.value = record.flight_hours.toString().padStart(2, '0');
         minuteInput.value = record.flight_minutes.toString().padStart(2, '0');
@@ -1820,9 +1882,9 @@ async function fillFirstSegmentTime(record) {
 }
 
 async function fillSecondSegmentTime() {
-    const hourInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[2]/div/input[1]', 5000, true);
-    const minuteInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[2]/div/input[2]', 5000, true);
-    const flightsInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[3]/div/input', 5000, true);
+    const hourInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[2]/div/input[1]', 15000, true);
+    const minuteInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[2]/div/input[2]', 15000, true);
+    const flightsInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[2]/div[3]/div/input', 15000, true);
     if (hourInput && minuteInput && flightsInput) {
         hourInput.value = '00';
         minuteInput.value = '00';
@@ -2165,8 +2227,8 @@ async function processExistingPlanWithManual(row, plan) {{
     console.log(`🗺️ 起飞映射: ${{depInfo.icao}} -> ${{depInfo.zone}}/${{depInfo.province || depInfo.country || ''}}`);
     console.log(`🗺️ 降落映射: ${{arrInfo.icao}} -> ${{arrInfo.zone}}/${{arrInfo.province || arrInfo.country || ''}}`);
 
-    if (!(await fillAirportBlock(1, depInfo, "起飞"))) return false;
-    if (!(await fillAirportBlock(2, arrInfo, "降落"))) return false;
+    if (!(await withRetry(() => fillAirportBlock(1, depInfo, "起飞"), 2, 10000, "起飞机场"))) return false;
+    if (!(await withRetry(() => fillAirportBlock(2, arrInfo, "降落"), 2, 10000, "降落机场"))) return false;
 
     const actualFlightTime = plan["实际飞行时间"];
     if (actualFlightTime && actualFlightTime.includes(':')) {{
@@ -2296,8 +2358,8 @@ async function processNextDayRecord(record) {{
     if (purposeSelect) await setSelectValue(purposeSelect, purpose);
     else console.warn('未找到用途下拉框');
 
-    const startDateInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[9]/div/input', 5000, true);
-    const endDateInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[10]/div/input', 5000, true);
+    const startDateInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[9]/div/input', 15000, true);
+    const endDateInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[10]/div/input', 15000, true);
     if (startDateInput) setDateInput(startDateInput, record.start_date);
     else console.warn('未找到服务开始日期输入框');
     if (endDateInput) setDateInput(endDateInput, record.end_date);
@@ -2306,8 +2368,8 @@ async function processNextDayRecord(record) {{
     const depInfo = getLocationInfo(record.dep_icao, record.dep_city);
     const arrInfo = getLocationInfo(record.arr_icao, record.arr_city);
 
-    if (!(await fillFirstSegmentSelects(record.dep_icao, record.dep_city))) {{
-        console.error(`❌ 起飞机段映射失败（${{record.dep_icao}} ${{record.dep_city}}），终止该计划，不提交`);
+    if (!(await withRetry(() => fillFirstSegmentSelects(record.dep_icao, record.dep_city), 2, 10000, "起飞机段"))) {{
+        console.error(`❌ 起飞机段映射失败（${{record.dep_icao}} ${{record.dep_city}}），跳过该计划，不提交`);
         return false;
     }}
     if (!(await fillFirstSegmentTime(record))) {{
@@ -2315,13 +2377,13 @@ async function processNextDayRecord(record) {{
         return false;
     }}
 
-    const addSegmentBtn = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[1]/div/div/button', 5000, true);
+    const addSegmentBtn = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[23]/div[1]/div[1]/div/div/button', 15000, true);
     if (addSegmentBtn) {{
         addSegmentBtn.click();
         console.log('已点击添加航段按钮，等待新航段加载...');
         await sleep(1000);
-        if (!(await fillSecondSegmentSelects(record.arr_icao, record.arr_city))) {{
-            console.error(`❌ 降落航段映射失败（${{record.arr_icao}} ${{record.arr_city}}），终止该计划，不提交`);
+        if (!(await withRetry(() => fillSecondSegmentSelects(record.arr_icao, record.arr_city), 3, 8000, "降落航段"))) {{
+            console.error(`❌ 降落航段映射失败（${{record.arr_icao}} ${{record.arr_city}}），跳过该计划，不提交`);
             return false;
         }}
         await fillSecondSegmentTime();
@@ -2329,7 +2391,7 @@ async function processNextDayRecord(record) {{
         console.warn('未找到添加航段按钮');
     }}
 
-    const detailAreaInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[25]/div/input', 5000, true);
+    const detailAreaInput = await waitForElement('/html/body/div[1]/div/div[3]/div/div[2]/form/div[25]/div/input', 15000, true);
     if (detailAreaInput) {{
         const detailText = `${{depInfo.airportName || record.dep_city}}-${{arrInfo.airportName || record.arr_city}}`;
         detailAreaInput.value = detailText;
@@ -2410,14 +2472,22 @@ async function {func_name}() {{
     const flightRecords = {flight_records_json};
     console.log(`🚀 开始执行计划自动化流程（{func_name}），共 ${{flightRecords.length}} 条计划...`);
     logAirportMapping(flightRecords);
+    const skipped = [];
     for (let i = 0; i < flightRecords.length; i++) {{
-        const success = await processNextDayRecord(flightRecords[i]);
+        let success = false;
+        try {{
+            success = await processNextDayRecord(flightRecords[i]);
+        }} catch (e) {{
+            console.error(`第 ${{i+1}} 条计划抛异常：${{e && e.message}}`);
+            success = false;
+        }}
         if (!success) {{
-            console.error(`第 ${{i+1}} 条计划处理失败，终止后续执行。`);
-            break;
+            skipped.push(`${{flightRecords[i].reg}} ${{flightRecords[i].dep_city}}→${{flightRecords[i].arr_city}}`);
+            console.error(`⚠️ 第 ${{i+1}} 条计划未能填写，已跳过，继续下一条`);
+            await sleep(3000);
         }}
     }}
-    console.log("所有计划处理完毕");
+    console.log(`✅ 完成 ${{flightRecords.length - skipped.length}} 条；⏭ 跳过 ${{skipped.length}} 条`, skipped);
 }}
 """
     return template
