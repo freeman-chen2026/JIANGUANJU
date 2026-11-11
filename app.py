@@ -1029,10 +1029,8 @@ def run_feature_c():
 
 
 
-
-
 # ==============================
-# 功能 D：通航脚本生成器（ICAO 维表版 · 境外逻辑完善 + 核对面板折叠）
+# 功能 D：通航脚本生成器（ICAO 维表版 · 境外逻辑完善 + 核对面板折叠 + 机场名完整保留）
 # ==============================
 COUNTRIES = [
     "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
@@ -1583,12 +1581,11 @@ function isMainlandIcao(icao) {
     return s.length === 4 && s.charAt(0) === "Z" && MAINLAND_EXCLUDE_PREFIX.indexOf(s.slice(0, 2)) === -1;
 }
 
+// 境外城市串 → 机场名称。直接去掉空格拼"机场"，保留完整国名/城市名
 function guessAirportName(city) {
     const c = String(city == null ? "" : city).trim();
     if (!c) return "";
-    const parts = c.split(/\s+/).filter(Boolean);
-    const namePart = parts.length > 1 ? parts[parts.length - 1] : parts[0];
-    return namePart + "机场";
+    return c.replace(/\s+/g, "") + "机场";
 }
 
 function getLocationInfo(icao, cityRaw) {
@@ -2652,7 +2649,6 @@ def run_feature_d():
                            [(r.get("到达地"), r.get("到达城市")) for _, r in df.iterrows()]
             ok_domestic, ok_foreign, bad_rows = airport_preview(preview_rows)
             
-            # 核对面板默认折叠，不再因为出现境外机场而自动展开
             with st.expander(f"🏷️ 机场映射核对（境内 {len(ok_domestic)} 个，境外 {len(ok_foreign)} 个）", expanded=False):
                 if ok_domestic:
                     st.markdown("#### ✅ 境内机场（走 ICAO 维表匹配）")
@@ -2710,7 +2706,7 @@ def run_feature_d():
 
             st.code(final_script, language="javascript")
 
-            st.info("💡 重要提示：\n1. 每次勾选计划后，下方脚本会自动刷新。\n2. **在粘贴到浏览器控制台之前，请先输入 `clear()` 并回车，清空旧代码**，然后再粘贴最新代码运行，以免旧脚本残留导致执行混乱。\n3. 境内/境外与省市一律按「出发地/到达地」的 ICAO 码判定；控制台会先打印映射表，只有在国家/地区识别失败时才会自动跳过，境外机场会正常走“其它/境外”逻辑。\n4. 境外机场名现在会从城市串自动推断（如「日本东京 羽田」→「羽田机场」），详细作业区 / 机场名输入框 / 作业基地三处保持一致。")
+            st.info("💡 重要提示：\n1. 每次勾选计划后，下方脚本会自动刷新。\n2. **在粘贴到浏览器控制台之前，请先输入 `clear()` 并回车，清空旧代码**，然后再粘贴最新代码运行，以免旧脚本残留导致执行混乱。\n3. 境内/境外与省市一律按「出发地/到达地」的 ICAO 码判定；控制台会先打印映射表，只有在国家/地区识别失败时才会自动跳过，境外机场会正常走“其它/境外”逻辑。\n4. 境外机场名现在会保留原始城市串并去掉空格（如「柬埔寨金边 德崇」→「柬埔寨金边德崇机场」），详细作业区 / 机场名输入框 / 作业基地三处保持一致。")
 
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
@@ -2724,8 +2720,6 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-
-
 
 
 
