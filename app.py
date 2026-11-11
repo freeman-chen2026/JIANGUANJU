@@ -1031,9 +1031,8 @@ def run_feature_c():
 
 
 
-
 # ==============================
-# 功能 D：通航脚本生成器（ICAO 维表版 · 境外"其它"与机场名修复）
+# 功能 D：通航脚本生成器（ICAO 维表版 · 境外逻辑完善 + 核对面板折叠）
 # ==============================
 COUNTRIES = [
     "香港", "澳门", "台湾", "蒙古", "朝鲜", "韩国", "日本", "菲律宾", "越南", "老挝",
@@ -1421,7 +1420,7 @@ def resolve_segment(icao, city_text=""):
 
 
 def airport_preview(rows):
-    ok, bad = [], []
+    ok_domestic, ok_foreign, bad = [], [], []
     seen = set()
     for icao, city in rows:
         s = str(icao or "").strip().upper()
@@ -1429,13 +1428,17 @@ def airport_preview(rows):
             continue
         seen.add(s)
         info = resolve_segment(icao, city)
-        if info["zone"] == "境内" and info["province"]:
-            ok.append({"ICAO": info["icao"], "原城市串": city, "省份": info["province"],
+        
+        if info["error"]:
+            bad.append({"ICAO": s or "(空)", "原城市串": city, "问题": info["error"]})
+        elif info["zone"] == "境内":
+            ok_domestic.append({"ICAO": info["icao"], "原城市串": city, "省份": info["province"],
                        "第三级候选": " / ".join(info["candidates"]), "机场全名": info["airport_name"]})
         else:
-            bad.append({"ICAO": s or "(空)", "原城市串": city,
-                        "问题": info["error"] or "境外段（走国家选择）"})
-    return ok, bad
+            ok_foreign.append({"ICAO": info["icao"], "原城市串": city, "国家/地区": info["candidates"][0] if info["candidates"] else "",
+                               "机场名称(推断)": info["airport_name"]})
+            
+    return ok_domestic, ok_foreign, bad
 
 
 def build_foreign_map(df):
@@ -1580,8 +1583,6 @@ function isMainlandIcao(icao) {
     return s.length === 4 && s.charAt(0) === "Z" && MAINLAND_EXCLUDE_PREFIX.indexOf(s.slice(0, 2)) === -1;
 }
 
-// 从城市串推机场名：取最后一个空格后的部分
-// "日本东京 羽田"→"羽田机场"、"韩国首尔 仁川"→"仁川机场"、"香港"→"香港机场"
 function guessAirportName(city) {
     const c = String(city == null ? "" : city).trim();
     if (!c) return "";
@@ -1590,7 +1591,6 @@ function guessAirportName(city) {
     return namePart + "机场";
 }
 
-// 返回统一结构；province 为空 = 不可填，调用方必须跳过
 function getLocationInfo(icao, cityRaw) {
     const city = String(cityRaw == null ? "" : cityRaw).trim();
     const code = normIcao(icao);
@@ -1609,7 +1609,6 @@ function getLocationInfo(icao, cityRaw) {
         };
     }
 
-    // 境外：补出 airportName，供机场名输入框 / 详细作业区 / 作业基地三处统一使用
     let country = CITY_MAP[city];
     if (!country && city) {
         const parts = city.split(/[\s\-]/);
@@ -1622,12 +1621,10 @@ function getLocationInfo(icao, cityRaw) {
     };
 }
 
-// 去掉“国际/国内/机场”和空格后再比，机场全名写法差异也能对上
 function normName(v) {
     return String(v == null ? "" : v).replace(/\s/g, "").replace(/(国际|国内|机场)/g, "");
 }
 
-// 下拉框匹配：未命中就是 0 分，绝不选第一个充数
 async function setSelectValue(selectEl, valueText) {
     if (!selectEl) return false;
     const target = String(valueText == null ? "" : valueText).trim();
@@ -1686,7 +1683,6 @@ async function setSelectValue(selectEl, valueText) {
     return false;
 }
 
-// 航段（备案表单）：境内/境外 → 省 → 市/区
 async function fillSegmentSelects(container, info) {
     if (!container) { console.error("未找到航段容器"); return false; }
     const sel = (i) => container.querySelectorAll("select")[i];
@@ -1769,7 +1765,6 @@ async function fillSecondSegmentSelects(icao, city) {
     return fillSegmentSelects(container, getLocationInfo(icao, city));
 }
 
-// 作业区（执行表单）：起飞机场 / 降落机场
 async function fillAirportBlock(blockIndex, info, label) {
     let firstSelectXPath, secondSelectXPath;
     if (blockIndex === 1) {
@@ -1801,7 +1796,6 @@ async function fillAirportBlock(blockIndex, info, label) {
         return false;
     }
 
-    // ===== 境外：先在机场下拉里选"其它"（选项异步加载，多别名 + 重试） =====
     const OTHER_ALIAS = ["其它", "其它机场", "其他", "其他机场"];
     const trySelectOther = async () => {
         for (const cand of OTHER_ALIAS) {
@@ -1823,7 +1817,6 @@ async function fillAirportBlock(blockIndex, info, label) {
     console.log(`  ✅ ${label} 机场下拉 = "${otherPicked}"`);
     await sleep(1200);
 
-    // 选完"其它"后，同一区块会多出两个"境外"下拉和一个机场名称输入框
     let box = firstSelect;
     while (box && !(box.contains && box.contains(secondSelect))) box = box.parentElement;
 
@@ -1836,7 +1829,6 @@ async function fillAirportBlock(blockIndex, info, label) {
         if (inputs.length) nameInput = inputs[inputs.length - 1];
     }
 
-    // 兜底：按原来的绝对路径再找一遍
     if (!z1 || !z2) {
         const seg = blockIndex === 2 ? 'div[11]/div[2]/div[2]/div' : 'div[11]/div[1]/div[2]/div';
         const bases = [`/html/body/div[1]/div/div[3]/div/div[2]/form/${seg}/div[2]/div`,
@@ -1863,7 +1855,6 @@ async function fillAirportBlock(blockIndex, info, label) {
     return okFirst && okZ;
 }
 
-// 运行前先看清楚映射
 function logAirportMapping(records) {
     const rows = [];
     (records || []).forEach(r => {
@@ -2010,7 +2001,6 @@ async function handleSecondFlightTime() {
     }
 }
 
-// 详细作业区：境内/境外统一使用 airportName（境外已在上游 getLocationInfo 补全）
 async function handleDetailArea(depInfo, arrInfo) {
     const detailXPath = '/html/body/div[1]/div/div[3]/div/div[2]/form/div[16]/div/input';
     const detailInput = await waitForElement(detailXPath, 10000);
@@ -2660,12 +2650,18 @@ def run_feature_d():
 
             preview_rows = [(r.get("出发地"), r.get("出发城市")) for _, r in df.iterrows()] + \
                            [(r.get("到达地"), r.get("到达城市")) for _, r in df.iterrows()]
-            ok_rows, bad_rows = airport_preview(preview_rows)
-            with st.expander(f"🏷️ 机场映射核对（{len(ok_rows)} 个境内机场）", expanded=bool(bad_rows)):
-                if ok_rows:
-                    st.dataframe(pd.DataFrame(ok_rows), use_container_width=True, height=240)
+            ok_domestic, ok_foreign, bad_rows = airport_preview(preview_rows)
+            
+            # 核对面板默认折叠，不再因为出现境外机场而自动展开
+            with st.expander(f"🏷️ 机场映射核对（境内 {len(ok_domestic)} 个，境外 {len(ok_foreign)} 个）", expanded=False):
+                if ok_domestic:
+                    st.markdown("#### ✅ 境内机场（走 ICAO 维表匹配）")
+                    st.dataframe(pd.DataFrame(ok_domestic), use_container_width=True, height=240)
+                if ok_foreign:
+                    st.markdown("#### 🌍 境外机场（走境外国家选择逻辑，不会被跳过）")
+                    st.dataframe(pd.DataFrame(ok_foreign), use_container_width=True, height=240)
                 if bad_rows:
-                    st.error(f"以下 {len(bad_rows)} 个机场未识别，对应计划运行时会被自动跳过：")
+                    st.error(f"🚨 以下 {len(bad_rows)} 个机场的国家/地区无法识别，对应计划运行时会被自动跳过（请补全提取规则）：")
                     st.dataframe(pd.DataFrame(bad_rows), use_container_width=True)
 
             st.success(f"✅ 最终脚本将按顺序执行：{len(list_backup)} 条补备案 -> {len(list_execute)} 条执行 -> {len(list_future)} 条备案")
@@ -2714,7 +2710,7 @@ def run_feature_d():
 
             st.code(final_script, language="javascript")
 
-            st.info("💡 重要提示：\n1. 每次勾选计划后，下方脚本会自动刷新。\n2. **在粘贴到浏览器控制台之前，请先输入 `clear()` 并回车，清空旧代码**，然后再粘贴最新代码运行，以免旧脚本残留导致执行混乱。\n3. 境内/境外与省市一律按「出发地/到达地」的 ICAO 码判定；控制台会先打印映射表，映射不全的航段会自动跳过，不会提交。\n4. 境外机场名现在会从城市串自动推断（如「日本东京 羽田」→「羽田机场」），详细作业区 / 机场名输入框 / 作业基地三处保持一致。")
+            st.info("💡 重要提示：\n1. 每次勾选计划后，下方脚本会自动刷新。\n2. **在粘贴到浏览器控制台之前，请先输入 `clear()` 并回车，清空旧代码**，然后再粘贴最新代码运行，以免旧脚本残留导致执行混乱。\n3. 境内/境外与省市一律按「出发地/到达地」的 ICAO 码判定；控制台会先打印映射表，只有在国家/地区识别失败时才会自动跳过，境外机场会正常走“其它/境外”逻辑。\n4. 境外机场名现在会从城市串自动推断（如「日本东京 羽田」→「羽田机场」），详细作业区 / 机场名输入框 / 作业基地三处保持一致。")
 
             st.download_button(
                 label="💾 下载脚本文件 (.js)",
@@ -2728,7 +2724,6 @@ def run_feature_d():
             st.exception(e)
     else:
         st.info("请上传 Excel 文件开始")
-
 
 
 
